@@ -2,7 +2,9 @@
 
 Eigentumswohnungen als Kapitalanlage durchrechnen – zusammen mit Claude.
 
-Du schickst Claude den Link zu einem Inserat. Claude liest die Daten, recherchiert den Standort und speichert die Analyse über einen MCP-Connector in Quadratmeter. In der Web-App siehst du dann Kennzahlen, Diagramme, Standortnoten, die Risiko-Ampel und das Fazit. Mit einem Szenario-Rechner probierst du andere Preise, Zinsen oder Eigenkapital aus.
+Du legst eine Wohnung an, trägst die Daten aus dem Inserat ein, und Kaufnebenkosten, Rendite, Rate und Cashflow rechnen sich schon beim Tippen mit. Finanzierung und Steuersatz hinterlegst du einmal im Konto als Standardwerte.
+
+Optional schickst du Claude den Link zu einem Inserat. Claude liest die Daten, recherchiert den Standort und speichert die Analyse über einen MCP-Connector in Quadratmeter. In der Web-App siehst du dann Kennzahlen, Diagramme, Standortnoten, die Risiko-Ampel und das Fazit. Mit einem Szenario-Rechner probierst du andere Preise, Zinsen oder Eigenkapital aus.
 
 Eigene API-Keys brauchst du nicht: Claude verbindet sich per OAuth, und jeder Nutzer meldet sich dabei mit seinem eigenen Quadratmeter-Konto an.
 
@@ -11,7 +13,7 @@ Eigene API-Keys brauchst du nicht: Claude verbindet sich per OAuth, und jeder Nu
 - **Rechner** (`src/shared/calc.js`): Kaufnebenkosten je Bundesland, Brutto- und Nettomietrendite, Kaufpreisfaktor, Annuitätendarlehen, Cashflow vor und nach Steuern (AfA nach Baujahr, Grenzsteuersatz), 30-Jahres-Prognose, Eigenkapitalrendite (IRR) mit Verkauf, cashflow-neutraler Kaufpreis und Ampel-Faustregeln. Derselbe Code läuft im Server und im Browser.
 - **MCP-Server** unter `/mcp` mit den Tools `list_properties`, `get_property`, `create_property`, `update_property`, `calculate`, `save_analysis`, `add_note` und `compare_properties`.
 - **OAuth 2.1** mit dynamischer Client-Registrierung und PKCE, so wie Claude es für eigene Connectors erwartet.
-- **Web-App**: Übersicht mit Sortierung und Statusfilter, Detailseite, Vergleich von bis zu sechs Wohnungen, Notizen, Konto mit verbundenen Apps.
+- **Web-App**: Wohnungen im Formular anlegen und bearbeiten (mit Kennzahlen beim Tippen), eigene Standardwerte für Finanzierung und Steuer, Übersicht mit Sortierung und Statusfilter, Detailseite, Vergleich von bis zu sechs Wohnungen, Notizen, Konto mit verbundenen Apps.
 - **Nutzer und Rollen**: Admins laden Nutzer per Link ein, setzen Passwörter zurück, sperren oder löschen Nutzer. Jeder sieht nur seine eigenen Wohnungen.
 
 Keine externen Abhängigkeiten: nur Node.js 22 mit eingebautem SQLite.

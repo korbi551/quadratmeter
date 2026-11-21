@@ -12,6 +12,7 @@ Ablauf für eine neue Wohnung:
 2. Kernwerte sammeln: Kaufpreis, Wohnfläche, Kaltmiete (Ist oder erzielbar), Hausgeld gesamt und nicht umlagefähig, Zuführung zur Rücklage, Bundesland, Baujahr, Energieklasse. Fehlende Kernwerte bei der Person erfragen oder klar als Schätzung kennzeichnen.
 3. create_property mit den Stammdaten aufrufen.
 4. Finanzierungsannahmen klären (Eigenkapital, Sollzins, Tilgung, Grenzsteuersatz). Sonst Standardwerte nutzen und das sagen.
+   Gespeicherte Annahmen der Wohnung bzw. die Standardwerte der Person werden automatisch genutzt; Änderungen mit update_property (assumptions) speichern.
 5. calculate aufrufen. Die Zahlen rechnet der Server – nicht selbst nachrechnen oder abweichende Zahlen nennen.
 6. Standort recherchieren: Makrolage, Mikrolage, Mietmarkt (inkl. Mietspiegel/Vergleichsmiete, Mietpreisbremse), Kaufpreisniveau, Entwicklung. Je Bereich Note 1–10 (10 = sehr gut) mit kurzer Begründung, dazu eine Gesamtnote. Quellen merken.
 7. Risiken als Ampel bewerten (green/yellow/red): Rücklage und Sonderumlagen, Sanierungsbedarf (Dach, Fassade, Heizung, Fenster), Energie/GEG, Mietvertrag, Teilungserklärung/Protokolle, Lage.
@@ -102,7 +103,7 @@ export const TOOL_DEFINITIONS = [
     description: 'Legt eine neue Wohnung mit Stammdaten an. Nur "title" ist Pflicht; je mehr Kernwerte, desto genauer die Analyse.',
     inputSchema: {
       type: 'object',
-      properties: { status: statusSchema, ...propertySchema() },
+      properties: { status: statusSchema, ...propertySchema(), assumptions: assumptionsSchema },
       required: ['title'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -113,7 +114,7 @@ export const TOOL_DEFINITIONS = [
     description: 'Ändert Stammdaten oder Status einer Wohnung, z. B. nach Besichtigung oder neuen Unterlagen. Nur angegebene Felder werden geändert; null löscht einen Wert.',
     inputSchema: {
       type: 'object',
-      properties: { property_id: idSchema, status: statusSchema, ...propertySchema({ nullable: true }) },
+      properties: { property_id: idSchema, status: statusSchema, ...propertySchema({ nullable: true }), assumptions: { ...assumptionsSchema, description: 'Neue Annahmen der Wohnung (werden mit den bisherigen zusammengeführt; null setzt einen Wert auf Standard zurück)' } },
       required: ['property_id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -248,9 +249,11 @@ export function createTools({ store, config }) {
     get_property(user, args) {
       const p = store.requireProperty(user.id, args.property_id);
       const a = store.latestAnalysis(p.id);
-      const m = analyze(p, a?.assumptions || {});
+      const assumptions = store.assumptionsFor(user.id, p, a);
+      const m = analyze(p, assumptions);
       return {
         property: p,
+        assumptions,
         status_label: labelOf(STATUSES, p.status),
         latest_analysis: a,
         metrics: compactMetrics(m),
@@ -261,9 +264,9 @@ export function createTools({ store, config }) {
     },
 
     create_property(user, args) {
-      const { status, ...data } = args;
-      const p = store.createProperty(user.id, data, status);
-      const m = analyze(p, {}, { breakEven: false });
+      const { status, assumptions, ...data } = args;
+      const p = store.createProperty(user.id, data, status, assumptions);
+      const m = analyze(p, store.assumptionsFor(user.id, p, null), { breakEven: false });
       return {
         property_id: p.id,
         message: 'Wohnung angelegt.',
@@ -273,21 +276,33 @@ export function createTools({ store, config }) {
     },
 
     update_property(user, args) {
-      const { property_id, status, ...patch } = args;
-      const p = store.updateProperty(user.id, property_id, patch, status);
+      const { property_id, status, assumptions, ...patch } = args;
+      let p = store.updateProperty(user.id, property_id, patch, status);
+      if (assumptions && typeof assumptions === 'object') {
+        const current = store.assumptionsFor(user.id, p, store.latestAnalysis(p.id));
+        const merged = { ...current };
+        for (const [k, v] of Object.entries(assumptions)) {
+          if (v === null) delete merged[k];
+          else merged[k] = v;
+        }
+        store.setAssumptions(user.id, p.id, merged);
+        p = store.getProperty(user.id, p.id);
+      }
       return { property_id: p.id, message: 'Wohnung aktualisiert.', property: p, link: link(p.id) };
     },
 
     calculate(user, args) {
       let base = {};
+      let stored = store.userDefaults(user.id);
       if (args.property_id !== undefined && args.property_id !== null) {
         base = store.requireProperty(user.id, args.property_id);
+        stored = store.assumptionsFor(user.id, base, store.latestAnalysis(base.id));
       } else if (!args.overrides) {
         throw new ValidationError('Bitte property_id oder overrides mit Stammdaten angeben.');
       }
       const overrides = args.overrides ? cleanPropertyData(args.overrides, { partial: true }) : {};
       const property = { ...base, ...overrides };
-      const assumptions = cleanAssumptions(args.assumptions || {});
+      const assumptions = { ...stored, ...cleanAssumptions(args.assumptions || {}) };
       return compactMetrics(analyze(property, assumptions));
     },
 
@@ -324,7 +339,7 @@ export function createTools({ store, config }) {
       const rows = ids.map((id) => {
         const p = store.requireProperty(user.id, id);
         const a = store.latestAnalysis(p.id);
-        const m = analyze(p, a?.assumptions || {}, { breakEven: false });
+        const m = analyze(p, store.assumptionsFor(user.id, p, a), { breakEven: false });
         return {
           ...overviewRow(config.baseUrl, { property: p, analysis: a, metrics: m }),
           price_per_sqm: m.purchase.price_per_sqm,

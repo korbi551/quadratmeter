@@ -1,7 +1,8 @@
 // HTML-Seiten (serverseitig gerendert, mit automatischem Escaping).
 import { fmt } from './shared/calc.js';
 import {
-  PROPERTY_FIELDS, STATUSES, RECOMMENDATIONS, RISK_LEVELS, LOCATION_CATEGORIES, ASSUMPTION_FIELD_MAP, STATES, labelOf,
+  PROPERTY_FIELDS, PROPERTY_FIELD_MAP, ASSUMPTION_FIELDS, CORE_ASSUMPTIONS, STATUSES, RECOMMENDATIONS, RISK_LEVELS,
+  LOCATION_CATEGORIES, ASSUMPTION_FIELD_MAP, STATES, labelOf,
 } from './shared/fields.js';
 import { METRIC_GROUPS, HEADLINE_METRICS, get, formatValue } from './shared/display.js';
 
@@ -172,8 +173,12 @@ export function overview(ctx, { rows, status, mcpUrl }) {
       active: 'wohnungen',
       body: html`<section class="empty">
         <h1>Noch keine Wohnungen</h1>
-        <p>Claude legt Wohnungen für dich an und rechnet sie durch. So verbindest du Claude mit Quadratmeter:</p>
-        ${connectSteps(mcpUrl)}
+        <p>Trag die Daten aus dem Inserat ein – Kaufnebenkosten, Rendite, Rate und Cashflow rechnen sich automatisch.</p>
+        <p><a class="button" href="/wohnungen/neu">Erste Wohnung anlegen</a></p>
+        <details class="hint">
+          <summary>Oder ein Inserat von Claude auswerten lassen</summary>
+          ${connectSteps(mcpUrl)}
+        </details>
       </section>`,
     });
   }
@@ -220,7 +225,7 @@ export function overview(ctx, { rows, status, mcpUrl }) {
     title: 'Wohnungen',
     active: 'wohnungen',
     body: html`<div class="page-head">
-        <h1>Wohnungen</h1>
+        <div class="page-title"><h1>Wohnungen</h1><a class="button" href="/wohnungen/neu">Neue Wohnung</a></div>
         <nav class="filters" aria-label="Nach Status filtern">
           <a href="/wohnungen" ${!status ? raw('aria-current="true"') : ''}>Alle <span>${rows.length}</span></a>
           ${STATUSES.filter((s) => counts[s.key]).map((s) => html`<a href="/wohnungen?status=${s.key}" ${status === s.key ? raw('aria-current="true"') : ''}>${s.label} <span>${counts[s.key]}</span></a>`)}
@@ -228,7 +233,7 @@ export function overview(ctx, { rows, status, mcpUrl }) {
       </div>
       ${filtered.length ? table : html`<p class="muted">Keine Wohnungen mit diesem Status.</p>`}
       <details class="hint">
-        <summary>Neue Wohnung über Claude analysieren</summary>
+        <summary>Inserate von Claude auswerten lassen</summary>
         ${connectSteps(mcpUrl)}
       </details>`,
   });
@@ -414,7 +419,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
     p.energy_class ? `Energieklasse ${p.energy_class}` : null,
     p.rented === true ? 'vermietet' : p.rented === false ? 'leer' : null,
   ].filter(Boolean).join(', ');
-  const clientData = { property: p, assumptions: a?.assumptions || {} };
+  const clientData = { property: p, assumptions: m.assumptions };
 
   const body = html`
   <a class="back" href="/wohnungen">Alle Wohnungen</a>
@@ -424,6 +429,8 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
       ${addr ? html`<p class="addr">${addr}</p>` : ''}
       ${facts ? html`<p class="muted">${facts}${p.url ? html`, <a href="${p.url}" rel="noopener noreferrer" target="_blank">Inserat öffnen</a>` : ''}</p>` : ''}
     </div>
+    <div class="head-actions">
+    <a class="button secondary-btn" href="/wohnungen/${p.id}/bearbeiten">Bearbeiten</a>
     <form method="post" action="/wohnungen/${p.id}/status" class="status-form">
       ${csrf(ctx)}
       <label for="status">Status</label>
@@ -432,6 +439,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
       </select>
       <button type="submit" class="secondary small-btn" data-hide-js>Speichern</button>
     </form>
+    </div>
   </header>
 
   ${!isLatest ? html`<p class="alert">Du siehst eine ältere Analyse vom ${dateTime(a.created_at)}. <a href="/wohnungen/${p.id}">Zur aktuellen Analyse</a></p>` : ''}
@@ -446,10 +454,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
       <div class="verdict-text">${a.summary ? paragraphs(a.summary) : html`<p class="muted">Kein Fazit hinterlegt.</p>`}
         <p class="small muted">Analyse vom ${dateTime(a.created_at)}</p></div>
     </section>`
-    : html`<section class="notice">
-      <h2>Noch keine Analyse</h2>
-      <p>Die Zahlen unten rechnen mit Standardannahmen. Für Standort, Risiken und Fazit schreib Claude: „Analysiere Wohnung ${p.id} in Quadratmeter.“</p>
-    </section>`}
+    : ''}
 
   ${m.warnings.length ? html`<ul class="warnings">${m.warnings.map((w) => html`<li>${w}</li>`)}</ul>` : ''}
 
@@ -457,6 +462,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
     <div class="detail-main">
       ${chain(m)}
       ${headline(m)}
+      ${assumptionLine(p, m)}
       <section class="charts" aria-labelledby="chart-title">
         <h2 id="chart-title">Vermögen und Cashflow über 30 Jahre</h2>
         <div class="chart" data-chart="wealth" role="img" aria-label="Immobilienwert, Restschuld und Eigenkapital über 30 Jahre"></div>
@@ -498,6 +504,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
         <h2 id="hist-title">Frühere Analysen</h2>
         <ul>${history.map((h, i) => html`<li>${h.id === a?.id ? html`<strong>${dateTime(h.created_at)}</strong> (angezeigt)` : html`<a href="/wohnungen/${p.id}${i === 0 ? '' : `?analyse=${h.id}`}">${dateTime(h.created_at)}</a>`}${h.recommendation ? `, ${labelOf(RECOMMENDATIONS, h.recommendation)}` : ''}</li>`)}</ul>
       </section>` : ''}
+      ${!a ? html`<section class="claude-hint"><h2>Mit Claude ergänzen</h2><p class="small">Optional: Claude kann Standort, Risiken und ein Fazit ergänzen. Schreib dafür in Claude „Analysiere Wohnung ${p.id} in Quadratmeter“.</p></section>` : ''}
       <section class="danger">
         <form method="post" action="/wohnungen/${p.id}/loeschen">${csrf(ctx)}
           <button type="submit" class="danger-btn" data-confirm="Wohnung „${p.title}“ mit allen Analysen und Notizen löschen?">Wohnung löschen</button>
@@ -548,16 +555,17 @@ export function compare(ctx, { items }) {
 
 // ---------- Konto ----------
 
-export function account(ctx, { grants, mcpUrl, notice, error }) {
+export function account(ctx, { grants, mcpUrl, notice, error, defaults = {} }) {
   return layout(ctx, {
     title: 'Konto',
     active: 'konto',
     body: html`<h1>Konto</h1>
     ${notice ? html`<p class="success" role="status">${notice}</p>` : ''}
     ${error ? html`<p class="alert" role="alert">${error}</p>` : ''}
+    ${defaultsSection(ctx, Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, toInputValue(v)])))}
     <div class="two-col">
       <section>
-        <h2>Claude verbinden</h2>
+        <h2>Claude verbinden <span class="muted small">(optional)</span></h2>
         ${connectSteps(mcpUrl)}
         <h3>Verbundene Apps</h3>
         ${grants.length ? html`<ul class="grant-list">${grants.map((g) => html`<li>
@@ -631,4 +639,177 @@ export function admin(ctx, { users, notice, error, link }) {
       <p class="small muted">Jeder Nutzer sieht nur seine eigenen Wohnungen. Admins sehen hier die Nutzerliste, aber keine fremden Analysen.</p>
     </section>`,
   });
+}
+
+// ---------- Annahmen auf der Detailseite ----------
+
+function assumptionLine(p, m) {
+  const A = m.assumptions;
+  const equity = A.equity === null || A.equity === undefined
+    ? `${fmt.euro(m.financing.equity)} Eigenkapital (Kaufnebenkosten)`
+    : `${fmt.euro(m.financing.equity)} Eigenkapital`;
+  return html`<p class="assumption-line small">
+    Gerechnet mit ${equity}, ${fmt.num(A.interest_rate, 2)} % Zins, ${fmt.num(A.repayment_rate, 2)} % Tilgung,
+    ${fmt.num(A.fixed_years, 0)} Jahren Zinsbindung und ${fmt.num(A.tax_rate, 0)} % Grenzsteuersatz.
+    <a href="/wohnungen/${p.id}/bearbeiten#finanzierung">Annahmen ändern</a>
+  </p>`;
+}
+
+// ---------- Formular: Wohnung anlegen / bearbeiten ----------
+
+const FORM_GROUPS = [
+  { title: 'Wohnung', keys: ['title', 'url', 'street', 'zip', 'city', 'district', 'state', 'living_area', 'rooms', 'floor', 'year_built', 'energy_class'] },
+  { title: 'Kauf', keys: ['purchase_price', 'parking_price', 'broker_pct'] },
+  { title: 'Miete', keys: ['cold_rent', 'rented', 'parking_rent', 'market_rent_per_sqm'] },
+  { title: 'Hausgeld', keys: ['hausgeld_total', 'hausgeld_non_allocable', 'reserve_contribution'] },
+];
+const MORE_FIELDS = ['condition', 'units_in_building', 'rent_type', 'tenancy_since', 'community_reserve', 'ownership_share', 'energy_value', 'heating', 'description'];
+const WIDE_FIELDS = ['title', 'url', 'description'];
+const FIELD_HINTS = {
+  title: 'Ein Name, an dem du die Wohnung wiedererkennst.',
+  hausgeld_non_allocable: 'Steht in der Hausgeldabrechnung. Leer = 35 % des Hausgelds.',
+  reserve_contribution: 'Anteil für die Erhaltungsrücklage.',
+  broker_pct: '0 bei provisionsfrei.',
+  cold_rent: 'Ist-Miete oder erzielbare Miete.',
+  market_rent_per_sqm: 'Laut Mietspiegel, für den Vergleich.',
+  equity: 'Leer = du zahlst die Kaufnebenkosten selbst, der Kaufpreis wird finanziert.',
+  tax_rate: 'Dein persönlicher Grenzsteuersatz.',
+};
+
+export const toInputValue = (v) => {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'number') return String(v).replace('.', ',');
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  return String(v);
+};
+
+function inputFor(f, value, { name = f.key, placeholder = '' } = {}) {
+  const id = `f-${name}`;
+  const hint = FIELD_HINTS[f.key];
+  const label = html`<label for="${id}">${f.label}${f.key === 'title' ? ' *' : ''}</label>`;
+  let control;
+  if (f.type === 'enum' || f.type === 'boolean') {
+    const options = f.type === 'boolean'
+      ? [['true', 'ja'], ['false', 'nein']]
+      : f.options.map((o) => [o, f.key === 'state' ? STATES[o].name : f.key === 'rent_type' ? { standard: 'Standard', staffel: 'Staffelmiete', index: 'Indexmiete' }[o] : o]);
+    control = html`<select id="${id}" name="${name}"><option value="">–</option>${options.map(([v, l]) => html`<option value="${v}" ${v === value ? raw('selected') : ''}>${l}</option>`)}</select>`;
+  } else if (f.key === 'description') {
+    control = html`<textarea id="${id}" name="${name}" rows="4">${value}</textarea>`;
+  } else {
+    const numeric = f.type === 'number' || f.type === 'integer' || f.unit;
+    control = html`<span class="with-unit">
+      <input type="text" id="${id}" name="${name}" value="${value}" ${numeric ? raw('inputmode="decimal" autocomplete="off"') : ''}
+        ${f.key === 'title' ? raw('required maxlength="200"') : ''} ${f.key === 'url' ? raw('inputmode="url"') : ''} placeholder="${placeholder}">
+      ${f.unit ? html`<span class="unit">${f.unit}</span>` : ''}
+    </span>`;
+  }
+  return html`<div class="field ${WIDE_FIELDS.includes(f.key) ? 'wide' : ''}">${label}${control}${hint ? html`<span class="hint-text">${hint}</span>` : ''}</div>`;
+}
+
+function assumptionPlaceholder(f) {
+  if (f.key === 'equity') return 'Kaufnebenkosten';
+  if (f.key === 'afa_rate') return 'nach Baujahr';
+  if (f.key === 'transfer_tax_pct') return 'nach Bundesland';
+  if (f.key === 'broker_pct') return 'wie oben';
+  return f.default === null ? '' : toInputValue(f.default);
+}
+
+// values: { key: Rohwert als Text }
+function assumptionFields(values, prefix = 'a_') {
+  const core = ASSUMPTION_FIELDS.filter((f) => CORE_ASSUMPTIONS.includes(f.key));
+  const more = ASSUMPTION_FIELDS.filter((f) => !CORE_ASSUMPTIONS.includes(f.key) && f.key !== 'broker_pct');
+  const render = (f) => inputFor(f, values[f.key] ?? '', { name: prefix + f.key, placeholder: assumptionPlaceholder(f) });
+  return html`<div class="field-grid">${core.map(render)}</div>
+    <details class="more">
+      <summary>Weitere Annahmen</summary>
+      <p class="small muted">Leere Felder nutzen den grau angezeigten Standardwert.</p>
+      <div class="field-grid">${more.map(render)}</div>
+    </details>`;
+}
+
+const PREVIEW_ROWS = [
+  { key: 'purchase.total_investment', label: 'Gesamtinvestition', format: 'euro', strong: true },
+  { key: 'purchase.ancillary_total', label: 'davon Kaufnebenkosten', format: 'euro' },
+  { key: 'purchase.price_per_sqm', label: 'Kaufpreis pro m²', format: 'euro' },
+  { key: 'yields.factor', label: 'Kaufpreisfaktor', format: 'factor', signal: 'factor' },
+  { key: 'yields.gross_yield', label: 'Bruttomietrendite', format: 'pct' },
+  { key: 'yields.net_yield', label: 'Nettomietrendite', format: 'pct', signal: 'net_yield' },
+  { key: 'financing.loan', label: 'Darlehen', format: 'euro' },
+  { key: 'financing.rate_month', label: 'Rate pro Monat', format: 'euro' },
+  { key: 'cashflow.before_tax_month', label: 'Cashflow vor Steuern pro Monat', format: 'euroSigned' },
+  { key: 'cashflow.after_tax_month', label: 'Cashflow nach Steuern pro Monat', format: 'euroSigned', strong: true, signal: 'cashflow' },
+  { key: 'returns.irr', label: 'Eigenkapitalrendite (IRR)', format: 'pct' },
+  { key: 'break_even_price', label: 'Cashflow-neutral bei Kaufpreis', format: 'euro' },
+];
+
+function preview(m) {
+  return html`<aside class="form-preview" aria-labelledby="pv-title">
+    <h2 id="pv-title">Kennzahlen</h2>
+    <p class="small muted">Rechnen sich beim Tippen mit.</p>
+    <dl class="preview-list">
+      ${PREVIEW_ROWS.map((r) => html`<div class="${r.strong ? 'strong' : ''}">
+        <dt>${r.label}</dt>
+        <dd><span data-metric="${r.key}" data-format="${r.format}">${formatValue(r.format, get(m, r.key))}</span>
+          ${r.signal ? html`<span class="pv-signal" data-signal="${r.signal}">${levelDot(signalFor(m, r.signal))}</span>` : ''}</dd>
+      </div>`)}
+    </dl>
+    <ul class="pv-warnings small" data-preview-warnings>${m.warnings.map((w) => html`<li>${w}</li>`)}</ul>
+  </aside>`;
+}
+
+export function propertyForm(ctx, { mode, id, values, assumptionValues, status, error, metrics }) {
+  const isNew = mode === 'new';
+  const groups = FORM_GROUPS.map((g) => html`<fieldset>
+    <legend>${g.title}</legend>
+    <div class="field-grid">${g.keys.map((k) => inputFor(PROPERTY_FIELD_MAP[k], values[k] ?? ''))}</div>
+  </fieldset>`);
+  return layout(ctx, {
+    title: isNew ? 'Neue Wohnung' : 'Wohnung bearbeiten',
+    active: 'wohnungen',
+    body: html`<a class="back" href="${isNew ? '/wohnungen' : `/wohnungen/${id}`}">${isNew ? 'Alle Wohnungen' : 'Zurück zur Wohnung'}</a>
+    <h1>${isNew ? 'Neue Wohnung' : 'Wohnung bearbeiten'}</h1>
+    ${error ? html`<p class="alert" role="alert">${error}</p>` : ''}
+    <form method="post" action="${isNew ? '/wohnungen/neu' : `/wohnungen/${id}/bearbeiten`}" class="property-form" data-property-form novalidate>
+      ${csrf(ctx)}
+      <div class="pv-bar" aria-hidden="true">
+        <span>Faktor <b data-metric="yields.factor" data-format="factor">${formatValue('factor', metrics.yields.factor)}</b></span>
+        <span>Netto <b data-metric="yields.net_yield" data-format="pct">${formatValue('pct', metrics.yields.net_yield)}</b></span>
+        <span>Cashflow <b data-metric="cashflow.after_tax_month" data-format="euroSigned">${formatValue('euroSigned', metrics.cashflow.after_tax_month)}</b></span>
+      </div>
+      <div class="form-layout">
+        <div class="form-main">
+          ${groups}
+          <fieldset id="finanzierung">
+            <legend>Finanzierung und Steuer</legend>
+            ${assumptionFields(assumptionValues)}
+          </fieldset>
+          <fieldset>
+            <legend>Weitere Angaben</legend>
+            <div class="field-grid">
+              ${MORE_FIELDS.map((k) => inputFor(PROPERTY_FIELD_MAP[k], values[k] ?? ''))}
+              <div class="field"><label for="f-status">Status</label>
+                <select id="f-status" name="status">${STATUSES.map((s) => html`<option value="${s.key}" ${s.key === status ? raw('selected') : ''}>${s.label}</option>`)}</select></div>
+            </div>
+          </fieldset>
+          <div class="row-actions form-actions">
+            <button type="submit">${isNew ? 'Wohnung anlegen' : 'Änderungen speichern'}</button>
+            <a href="${isNew ? '/wohnungen' : `/wohnungen/${id}`}">Abbrechen</a>
+          </div>
+        </div>
+        ${preview(metrics)}
+      </div>
+    </form>`,
+  });
+}
+
+export function defaultsSection(ctx, values) {
+  return html`<section class="defaults">
+    <h2>Meine Standardwerte</h2>
+    <p class="small muted">Neue Wohnungen übernehmen diese Werte. Bei jeder Wohnung kannst du sie danach einzeln ändern.</p>
+    <form method="post" action="/konto/standardwerte" class="stack">
+      ${csrf(ctx)}
+      ${assumptionFields(values)}
+      <div><button type="submit">Standardwerte speichern</button></div>
+    </form>
+  </section>`;
 }

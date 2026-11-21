@@ -112,4 +112,19 @@ export const ASSUMPTION_FIELDS = [
 
 export const ASSUMPTION_FIELD_MAP = Object.fromEntries(ASSUMPTION_FIELDS.map((f) => [f.key, f]));
 
+// Annahmen, die im Formular und im Konto direkt sichtbar sind (der Rest liegt unter "Weitere Annahmen").
+export const CORE_ASSUMPTIONS = ['equity', 'interest_rate', 'repayment_rate', 'fixed_years', 'tax_rate'];
+
 export const labelOf = (list, key) => list.find((x) => x.key === key)?.label ?? key;
+
+// Zahl aus Eingabe lesen: "250.000", "250000", "3,8", "3.8", "1.250,50 €" → Zahl, sonst NaN.
+export function parseNumber(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== 'string') return NaN;
+  let s = v.trim().replace(/[€%\s]/g, '').replace(/[−–]/g, '-');
+  if (s === '') return NaN;
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) && s.includes('.')) s = s.replace(/,/g, '');
+  else s = s.replace(',', '.');
+  return /^-?\d*\.?\d+$/.test(s) ? Number(s) : NaN;
+}

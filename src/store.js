@@ -2,24 +2,14 @@
 import { nowIso } from './db.js';
 import { analyze } from './shared/calc.js';
 import {
-  PROPERTY_FIELDS, ASSUMPTION_FIELDS, STATES, STATUSES, RECOMMENDATIONS, LOCATION_CATEGORIES,
+  PROPERTY_FIELDS, ASSUMPTION_FIELDS, STATES, STATUSES, RECOMMENDATIONS, LOCATION_CATEGORIES, parseNumber,
 } from './shared/fields.js';
 
 export class ValidationError extends Error {}
 
 const LEVEL_ALIASES = { green: 'green', gruen: 'green', grün: 'green', yellow: 'yellow', gelb: 'yellow', red: 'red', rot: 'red' };
 
-function toNumber(v) {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
-  if (typeof v === 'string') {
-    let s = v.trim().replace(/[€%\s]/g, '');
-    // "250.000" oder "250.000,50" (deutsch) → 250000 bzw. 250000.5
-    if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
-    else s = s.replace(',', '.');
-    return s === '' ? NaN : Number(s);
-  }
-  return NaN;
-}
+const toNumber = parseNumber;
 
 function stateKey(v) {
   const s = String(v).trim();
@@ -202,17 +192,57 @@ function hydrateProperty(row) {
   };
 }
 
+// Welche Annahmen gelten? Eigene Annahmen der Wohnung > letzte Analyse (über den Standardwerten) > Standardwerte.
+export function effectiveAssumptions(property, analysis, defaults = {}) {
+  if (property?.assumptions && typeof property.assumptions === 'object') return { ...property.assumptions };
+  return { ...defaults, ...(analysis?.assumptions || {}) };
+}
+
 export function createStore(db) {
   const latestAnalysisRow = (propertyId) =>
     db.get('SELECT * FROM analyses WHERE property_id = ? ORDER BY id DESC LIMIT 1', propertyId);
 
+  const writeData = (property, data) =>
+    db.run('UPDATE properties SET data = ?, updated_at = ? WHERE id = ?', JSON.stringify(data), nowIso(), property.id);
+
+  const dataOf = (property) => {
+    const { id: _i, user_id: _u, status: _s, created_at: _c, updated_at: _up, ...data } = property;
+    return data;
+  };
+
   const store = {
+    userDefaults(userId) {
+      const row = db.get('SELECT defaults FROM users WHERE id = ?', userId);
+      return parse(row?.defaults, {});
+    },
+
+    setUserDefaults(userId, input) {
+      const defaults = cleanAssumptions(input);
+      db.run('UPDATE users SET defaults = ? WHERE id = ?', JSON.stringify(defaults), userId);
+      return defaults;
+    },
+
+    assumptionsFor(userId, property, analysis) {
+      return effectiveAssumptions(property, analysis, store.userDefaults(userId));
+    },
+
+    // Ersetzt die Annahmen einer Wohnung (Finanzierung, Steuer, Prognose).
+    setAssumptions(userId, id, input) {
+      const property = store.requireProperty(userId, id);
+      const data = dataOf(property);
+      data.assumptions = cleanAssumptions(input);
+      writeData(property, data);
+      return data.assumptions;
+    },
+
     listProperties(userId) {
+      const defaults = store.userDefaults(userId);
       const rows = db.all('SELECT * FROM properties WHERE user_id = ? ORDER BY updated_at DESC', userId);
       return rows.map((r) => {
         const property = hydrateProperty(r);
         const analysis = hydrateAnalysis(latestAnalysisRow(r.id));
-        return { property, analysis, metrics: analyze(property, analysis?.assumptions || {}, { breakEven: false }) };
+        const assumptions = effectiveAssumptions(property, analysis, defaults);
+        return { property, analysis, assumptions, metrics: analyze(property, assumptions, { breakEven: false }) };
       });
     },
 
@@ -226,8 +256,9 @@ export function createStore(db) {
       return p;
     },
 
-    createProperty(userId, input, status) {
-      const data = cleanPropertyData(input);
+    createProperty(userId, input, status, assumptions) {
+      const data = Object.fromEntries(Object.entries(cleanPropertyData(input)).filter(([, v]) => v !== null));
+      if (assumptions) data.assumptions = cleanAssumptions(assumptions);
       const st = cleanStatus(status) || 'beobachtet';
       const now = nowIso();
       const info = db.run(
@@ -240,7 +271,8 @@ export function createStore(db) {
     updateProperty(userId, id, patch = {}, status) {
       const current = store.requireProperty(userId, id);
       const changes = cleanPropertyData(patch, { partial: true });
-      const { id: _i, user_id: _u, status: oldStatus, created_at: _c, updated_at: _up, ...data } = current;
+      const oldStatus = current.status;
+      const data = dataOf(current);
       for (const [k, v] of Object.entries(changes)) {
         if (v === null) delete data[k];
         else data[k] = v;
@@ -259,6 +291,12 @@ export function createStore(db) {
     saveAnalysis(userId, propertyId, input) {
       const property = store.requireProperty(userId, propertyId);
       const a = cleanAnalysis(input);
+      // Annahmen der Analyse ergänzen die bisherigen und gelten ab jetzt für die Wohnung.
+      const previous = store.assumptionsFor(userId, property, store.latestAnalysis(property.id));
+      a.assumptions = { ...previous, ...a.assumptions };
+      const data = dataOf(property);
+      data.assumptions = a.assumptions;
+      writeData(property, data);
       const info = db.run(
         `INSERT INTO analyses (property_id, created_at, assumptions, location, risks, summary, recommendation, max_price, sources)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

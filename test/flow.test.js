@@ -247,3 +247,87 @@ test('kompletter Ablauf', async () => {
   const blocked = await req('/mcp', { method: 'POST', headers: { authorization: `Bearer ${userClaude.access_token}` }, json: { jsonrpc: '2.0', id: 9, method: 'ping' } });
   assert.equal(blocked.status, 401);
 });
+
+test('Wohnung ohne Claude im Formular anlegen und bearbeiten', async () => {
+  const cookie = await login('admin@example.com', 'geheim-geheim');
+
+  // Standardwerte im Konto speichern
+  const konto = await req('/konto', { cookie });
+  const saveDefaults = await req('/konto/standardwerte', {
+    method: 'POST', cookie,
+    form: { _csrf: csrfOf(konto.text), a_interest_rate: '4,2', a_tax_rate: '42', a_equity: '30.000', a_repayment_rate: '' },
+  });
+  assert.equal(saveDefaults.status, 303);
+
+  // Neues Formular übernimmt die Standardwerte
+  const form = await req('/wohnungen/neu', { cookie });
+  assert.equal(form.status, 200);
+  assert.match(form.text, /name="a_interest_rate" value="4,2"/);
+  assert.match(form.text, /name="a_equity" value="30000"/);
+
+  // Fehler: ungültige Zahl → Formular mit Meldung, Eingaben bleiben erhalten
+  const bad = await req('/wohnungen/neu', {
+    method: 'POST', cookie,
+    form: { _csrf: csrfOf(form.text), title: 'Test', purchase_price: 'zweihundert', city: 'Murnau' },
+  });
+  assert.equal(bad.status, 400);
+  assert.match(bad.text, /Kaufpreis: keine gültige Zahl/);
+  assert.match(bad.text, /value="Murnau"/);
+
+  // Anlegen mit deutschen Zahlenformaten
+  const created = await req('/wohnungen/neu', {
+    method: 'POST', cookie,
+    form: {
+      _csrf: csrfOf(form.text), title: 'Apartment Murnau', city: 'Murnau', state: 'BY', living_area: '42',
+      purchase_price: '220.000', broker_pct: '3,57', cold_rent: '650', rented: 'false', hausgeld_total: '280',
+      hausgeld_non_allocable: '', energy_class: 'D', status: 'beobachtet',
+      a_equity: '30.000', a_interest_rate: '4,5', a_repayment_rate: '2', a_fixed_years: '10', a_tax_rate: '42',
+    },
+  });
+  assert.equal(created.status, 303, created.text.slice(0, 300));
+  const path = created.headers.get('location');
+  const id = Number(path.split('/').pop());
+
+  const detail = await req(path, { cookie });
+  assert.equal(detail.status, 200);
+  assert.match(detail.text, /Apartment Murnau/);
+  assert.match(detail.text, /4,5 % Zins/);
+  assert.match(detail.text, /30\.000 € Eigenkapital/);
+  assert.match(detail.text, /7\.700 €/); // 3,5 % Grunderwerbsteuer Bayern
+
+  // Bearbeiten: Kaufpreis ändern, Zins ändern
+  const edit = await req(`/wohnungen/${id}/bearbeiten`, { cookie });
+  assert.equal(edit.status, 200);
+  assert.match(edit.text, /name="purchase_price" value="220000"/);
+  const fields = Object.fromEntries([...edit.text.matchAll(/<input type="text" id="[^"]+" name="([^"]+)" value="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  const saved = await req(`/wohnungen/${id}/bearbeiten`, {
+    method: 'POST', cookie,
+    form: { ...fields, _csrf: csrfOf(edit.text), state: 'BY', rented: 'false', energy_class: 'D', status: 'besichtigt', purchase_price: '205000', a_interest_rate: '4,1' },
+  });
+  assert.equal(saved.status, 303);
+  const after = await req(`/wohnungen/${id}`, { cookie });
+  assert.match(after.text, /205\.000 €/);
+  assert.match(after.text, /4,1 % Zins/);
+  assert.match(after.text, /<option value="besichtigt" selected>/);
+
+  // Claude sieht die eingetragenen Annahmen
+  const claude = await connectClaude(cookie);
+  const got = await callTool(claude.access_token, 'get_property', { property_id: id });
+  assert.equal(got.structuredContent.assumptions.interest_rate, 4.1);
+  assert.equal(got.structuredContent.metrics.financing.equity, 30000);
+  const calc = await callTool(claude.access_token, 'calculate', { property_id: id, assumptions: { interest_rate: 3 } });
+  assert.equal(calc.structuredContent.assumptions.interest_rate, 3);
+  assert.equal(calc.structuredContent.assumptions.tax_rate, 42);
+
+  // Analyse von Claude ergänzt Annahmen, statt sie zu ersetzen
+  await callTool(claude.access_token, 'save_analysis', { property_id: id, assumptions: { repayment_rate: 3 }, summary: 'Test' });
+  const got2 = await callTool(claude.access_token, 'get_property', { property_id: id });
+  assert.equal(got2.structuredContent.assumptions.repayment_rate, 3);
+  assert.equal(got2.structuredContent.assumptions.interest_rate, 4.1);
+
+  // update_property mit Annahmen
+  await callTool(claude.access_token, 'update_property', { property_id: id, assumptions: { equity: null, tax_rate: 30 } });
+  const got3 = await callTool(claude.access_token, 'get_property', { property_id: id });
+  assert.equal(got3.structuredContent.assumptions.equity, undefined);
+  assert.equal(got3.structuredContent.assumptions.tax_rate, 30);
+});

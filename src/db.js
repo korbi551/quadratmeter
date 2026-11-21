@@ -104,6 +104,8 @@ const MIGRATIONS = [
   );
   CREATE INDEX notes_property ON notes(property_id);
   `,
+  // 2: eigene Standardwerte (Finanzierung, Steuer) pro Nutzer
+  `ALTER TABLE users ADD COLUMN defaults TEXT;`,
 ];
 
 function clean(params) {

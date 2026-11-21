@@ -1,6 +1,7 @@
 // Kleine Helfer im Browser: Kopieren, Bestätigen, Sortieren, Szenario-Rechner und Diagramme.
 import { analyze, fmt } from '/static/shared/calc.js';
 import { get, formatValue } from '/static/shared/display.js';
+import { PROPERTY_FIELD_MAP, ASSUMPTION_FIELD_MAP, parseNumber } from '/static/shared/fields.js';
 
 // ----- Kopieren -----
 document.addEventListener('click', async (e) => {
@@ -74,6 +75,8 @@ document.querySelectorAll('table.sortable').forEach((table) => {
 // ----- Detailseite -----
 function initDetail({ property, assumptions }) {
   const sliders = [...document.querySelectorAll('[data-scenario]')];
+  // Der Browser rundet Startwerte auf die Schrittweite; das gilt nicht als Änderung.
+  sliders.forEach((s) => (s.dataset.base = s.value));
   const flag = document.querySelector('[data-scenario-flag]');
 
   const showOutput = (s) => {
@@ -349,6 +352,62 @@ function drawCashflow(container, m) {
   container.appendChild(svg);
 }
 
+// ----- Formular: Kennzahlen beim Tippen -----
+function initForm(form) {
+  const read = () => {
+    const property = {};
+    const assumptions = {};
+    for (const el of form.elements) {
+      if (!el.name || el.name === '_csrf' || el.name === 'status') continue;
+      const isAssumption = el.name.startsWith('a_');
+      const key = isAssumption ? el.name.slice(2) : el.name;
+      const f = isAssumption ? ASSUMPTION_FIELD_MAP[key] : PROPERTY_FIELD_MAP[key];
+      if (!f) continue;
+      const v = el.value.trim();
+      el.classList.remove('invalid');
+      el.removeAttribute('aria-invalid');
+      if (v === '') continue;
+      const numeric = isAssumption || f.type === 'number' || f.type === 'integer';
+      if (numeric) {
+        const n = parseNumber(v);
+        if (!Number.isFinite(n)) {
+          el.classList.add('invalid');
+          el.setAttribute('aria-invalid', 'true');
+          continue;
+        }
+        (isAssumption ? assumptions : property)[key] = n;
+      } else if (f.type === 'boolean') {
+        property[key] = v === 'true';
+      } else {
+        property[key] = v;
+      }
+    }
+    return { property, assumptions };
+  };
+  const update = () => {
+    const { property, assumptions } = read();
+    const m = analyze(property, assumptions);
+    form.querySelectorAll('[data-metric]').forEach((el) => {
+      el.textContent = formatValue(el.dataset.format, get(m, el.dataset.metric));
+    });
+    form.querySelectorAll('[data-signal]').forEach((el) => {
+      const s = m.signals.find((x) => x.key === el.dataset.signal);
+      el.innerHTML = s ? signalHtml(s.level) : '';
+    });
+    const warn = form.querySelector('[data-preview-warnings]');
+    if (warn) warn.innerHTML = m.warnings.map((w) => `<li>${esc(w)}</li>`).join('');
+  };
+  let frame = 0;
+  form.addEventListener('input', () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(update);
+  });
+  form.addEventListener('change', update);
+  update();
+}
+
 // Start (am Ende, damit alle Konstanten oben schon definiert sind)
 const dataEl = document.getElementById('qm-data');
 if (dataEl) initDetail(JSON.parse(dataEl.textContent));
+const propertyFormEl = document.querySelector('[data-property-form]');
+if (propertyFormEl) initForm(propertyFormEl);

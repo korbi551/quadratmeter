@@ -6,7 +6,8 @@ import { createAuth, isEmail, normalizeEmail, validatePassword, verifyPassword }
 import { HttpError, Router, RateLimiter, parseBody, redirect, send, sendHtml } from './http.js';
 import { createOAuth, cleanup } from './oauth.js';
 import { createMcpHandler } from './mcp.js';
-import { createStore, ValidationError } from './store.js';
+import { createStore, ValidationError, cleanPropertyData, cleanAssumptions } from './store.js';
+import { PROPERTY_FIELDS, ASSUMPTION_FIELDS } from './shared/fields.js';
 import { createTools } from './tools.js';
 import { analyze } from './shared/calc.js';
 import * as views from './views.js';
@@ -111,6 +112,83 @@ export function createApp(config) {
   });
 
   // ----- Wohnungen -----
+  // Formularwerte (Text) → Vorschau-Kennzahlen; ungültige Einzelwerte werden dabei übersprungen.
+  const formFromBody = (body) => ({
+    values: Object.fromEntries(PROPERTY_FIELDS.map((f) => [f.key, String(body[f.key] ?? '')])),
+    assumptionValues: Object.fromEntries(ASSUMPTION_FIELDS.map((f) => [f.key, String(body[`a_${f.key}`] ?? '')])),
+  });
+  const previewMetrics = (values, assumptionValues) => {
+    const p = {};
+    for (const [k, v] of Object.entries(values)) {
+      try { Object.assign(p, cleanPropertyData({ [k]: v }, { partial: true })); } catch { /* überspringen */ }
+    }
+    const a = {};
+    for (const [k, v] of Object.entries(assumptionValues)) {
+      try { Object.assign(a, cleanAssumptions({ [k]: v })); } catch { /* überspringen */ }
+    }
+    return analyze(Object.fromEntries(Object.entries(p).filter(([, v]) => v !== null)), a);
+  };
+  const toValues = (obj, fields) => Object.fromEntries(fields.map((f) => [f.key, views.toInputValue(obj?.[f.key])]));
+  const renderForm = (ctx, res, status, opts) =>
+    sendHtml(res, status, views.propertyForm(ctx, { ...opts, metrics: previewMetrics(opts.values, opts.assumptionValues) }));
+
+  router.get('/wohnungen/neu', (req, res, ctx) => {
+    if (!requireUser(ctx, res)) return;
+    renderForm(ctx, res, 200, {
+      mode: 'new',
+      values: {},
+      assumptionValues: toValues(store.userDefaults(ctx.user.id), ASSUMPTION_FIELDS),
+      status: 'beobachtet',
+    });
+  });
+
+  router.post('/wohnungen/neu', async (req, res, ctx) => {
+    if (!requireUser(ctx, res)) return;
+    const body = await ctx.form();
+    const { values, assumptionValues } = formFromBody(body);
+    try {
+      const assumptions = cleanAssumptions(assumptionValues);
+      const p = store.createProperty(ctx.user.id, values, body.status, assumptions);
+      redirect(res, `/wohnungen/${p.id}`);
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err;
+      renderForm(ctx, res, 400, { mode: 'new', values, assumptionValues, status: body.status, error: err.message });
+    }
+  });
+
+  router.get('/wohnungen/:id/bearbeiten', (req, res, ctx) => {
+    if (!requireUser(ctx, res)) return;
+    const property = store.getProperty(ctx.user.id, ctx.params.id);
+    if (!property) return sendHtml(res, 404, views.notFound(ctx));
+    const assumptions = store.assumptionsFor(ctx.user.id, property, store.latestAnalysis(property.id));
+    renderForm(ctx, res, 200, {
+      mode: 'edit',
+      id: property.id,
+      values: toValues(property, PROPERTY_FIELDS),
+      assumptionValues: toValues(assumptions, ASSUMPTION_FIELDS),
+      status: property.status,
+    });
+  });
+
+  router.post('/wohnungen/:id/bearbeiten', async (req, res, ctx) => {
+    if (!requireUser(ctx, res)) return;
+    const body = await ctx.form();
+    const property = store.getProperty(ctx.user.id, ctx.params.id);
+    if (!property) return sendHtml(res, 404, views.notFound(ctx));
+    const { values, assumptionValues } = formFromBody(body);
+    try {
+      db.tx(() => {
+        const assumptions = cleanAssumptions(assumptionValues);
+        store.updateProperty(ctx.user.id, property.id, values, body.status);
+        store.setAssumptions(ctx.user.id, property.id, assumptions);
+      });
+      redirect(res, `/wohnungen/${property.id}`);
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err;
+      renderForm(ctx, res, 400, { mode: 'edit', id: property.id, values, assumptionValues, status: body.status, error: err.message });
+    }
+  });
+
   router.get('/wohnungen', (req, res, ctx) => {
     if (!requireUser(ctx, res)) return;
     const status = ctx.url.searchParams.get('status') || '';
@@ -125,10 +203,11 @@ export function createApp(config) {
     const requested = ctx.url.searchParams.get('analyse');
     const analysis = requested ? store.getAnalysis(ctx.user.id, requested) : latest;
     if (requested && (!analysis || analysis.property_id !== property.id)) return sendHtml(res, 404, views.notFound(ctx));
+    const assumptions = requested ? analysis.assumptions : store.assumptionsFor(ctx.user.id, property, analysis);
     sendHtml(res, 200, views.detail(ctx, {
       property,
       analysis,
-      metrics: analyze(property, analysis?.assumptions || {}),
+      metrics: analyze(property, assumptions),
       notes: store.listNotes(property.id),
       history: store.listAnalyses(property.id),
       isLatest: !analysis || !latest || analysis.id === latest.id,
@@ -172,7 +251,7 @@ export function createApp(config) {
     const unique = [...new Set(ids)].slice(0, 6);
     const items = unique.map((id) => store.getProperty(ctx.user.id, id)).filter(Boolean).map((p) => {
       const a = store.latestAnalysis(p.id);
-      return { p, a, m: analyze(p, a?.assumptions || {}, { breakEven: false }) };
+      return { p, a, m: analyze(p, store.assumptionsFor(ctx.user.id, p, a), { breakEven: false }) };
     });
     if (items.length < 2) {
       return sendHtml(res, 400, views.message({ ctx, title: 'Zu wenige Wohnungen', text: 'Wähle in der Übersicht mindestens zwei Wohnungen aus.', link: { href: '/wohnungen', label: 'Zur Übersicht' } }));
@@ -189,11 +268,25 @@ export function createApp(config) {
       userId
     );
   const renderAccount = (ctx, res, status = 200, extra = {}) =>
-    sendHtml(res, status, views.account(ctx, { grants: grantsOf(ctx.user.id), mcpUrl, ...extra }));
+    sendHtml(res, status, views.account(ctx, { grants: grantsOf(ctx.user.id), mcpUrl, defaults: store.userDefaults(ctx.user.id), ...extra }));
 
   router.get('/konto', (req, res, ctx) => {
     if (!requireUser(ctx, res)) return;
-    renderAccount(ctx, res, 200, { notice: ctx.url.searchParams.get('ok') === 'passwort' ? 'Passwort geändert.' : null });
+    const ok = ctx.url.searchParams.get('ok');
+    renderAccount(ctx, res, 200, { notice: ok === 'passwort' ? 'Passwort geändert.' : ok === 'standardwerte' ? 'Standardwerte gespeichert.' : null });
+  });
+
+  router.post('/konto/standardwerte', async (req, res, ctx) => {
+    if (!requireUser(ctx, res)) return;
+    const body = await ctx.form();
+    const input = Object.fromEntries(ASSUMPTION_FIELDS.map((f) => [f.key, body[`a_${f.key}`]]));
+    try {
+      store.setUserDefaults(ctx.user.id, input);
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err;
+      return renderAccount(ctx, res, 400, { error: err.message });
+    }
+    redirect(res, '/konto?ok=standardwerte');
   });
 
   router.post('/konto/passwort', async (req, res, ctx) => {
