@@ -15,6 +15,7 @@ Eigene API-Keys brauchst du nicht: Claude verbindet sich per OAuth, und jeder Nu
 - **OAuth 2.1** mit dynamischer Client-Registrierung und PKCE, so wie Claude es für eigene Connectors erwartet.
 - **Web-App**: Wohnungen im Formular anlegen und bearbeiten (mit Kennzahlen beim Tippen), eigene Standardwerte für Finanzierung und Steuer, Übersicht mit Sortierung und Statusfilter, Detailseite, Vergleich von bis zu sechs Wohnungen, Notizen, Konto mit verbundenen Apps.
 - **Nutzer und Rollen**: Admins laden Nutzer per Link ein, setzen Passwörter zurück, sperren oder löschen Nutzer. Jeder sieht nur seine eigenen Wohnungen.
+- **Freigabe**: Eine Wohnung lässt sich mit anderen Nutzern teilen. Sie erscheint bei ihnen unter „Mit mir geteilt“ und kann nur angesehen werden; die Szenario-Regler funktionieren, gespeichert wird nichts. Claude sieht weiterhin nur die eigenen Wohnungen.
 
 Keine externen Abhängigkeiten: nur Node.js 22 mit eingebautem SQLite.
 

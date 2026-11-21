@@ -163,11 +163,11 @@ function connectSteps(mcpUrl) {
   </ol>`;
 }
 
-export function overview(ctx, { rows, status, mcpUrl }) {
+export function overview(ctx, { rows, shared = [], status, mcpUrl }) {
   const filtered = status ? rows.filter((r) => r.property.status === status) : rows;
   const counts = Object.fromEntries(STATUSES.map((s) => [s.key, rows.filter((r) => r.property.status === s.key).length]));
 
-  if (!rows.length) {
+  if (!rows.length && !shared.length) {
     return layout(ctx, {
       title: 'Wohnungen',
       active: 'wohnungen',
@@ -183,7 +183,7 @@ export function overview(ctx, { rows, status, mcpUrl }) {
     });
   }
 
-  const table = html`<form method="get" action="/vergleich" class="overview-form">
+  const ownTable = html`
     <div class="table-wrap">
       <table class="data sortable">
         <thead><tr>
@@ -214,7 +214,43 @@ export function overview(ctx, { rows, status, mcpUrl }) {
         </tr>`)}
         </tbody>
       </table>
+    </div>`;
+
+  const sharedTable = shared.length ? html`<section class="shared-list" aria-labelledby="shared-title">
+    <h2 id="shared-title">Mit mir geteilt</h2>
+    <p class="small muted">Diese Wohnungen kannst du ansehen, aber nicht ändern.</p>
+    <div class="table-wrap">
+      <table class="data sortable">
+        <thead><tr>
+          <th scope="col" class="check"><span class="sr-only">Vergleichen</span></th>
+          <th scope="col" data-sort="text">Wohnung</th>
+          <th scope="col" data-sort="text">Geteilt von</th>
+          <th scope="col" class="num" data-sort="num">Kaufpreis</th>
+          <th scope="col" class="num" data-sort="num">Faktor</th>
+          <th scope="col" class="num" data-sort="num">Netto&shy;rendite</th>
+          <th scope="col" class="num" data-sort="num">Cashflow n.&nbsp;St.</th>
+          <th scope="col" data-sort="text">Empfehlung</th>
+        </tr></thead>
+        <tbody>
+        ${shared.map(({ property: p, analysis: a, metrics: m, ownerName }) => html`<tr>
+          <td class="check"><input type="checkbox" name="ids" value="${p.id}" aria-label="${p.title} vergleichen"></td>
+          <td data-value="${p.title}"><a href="/wohnungen/${p.id}" class="row-title">${p.title}</a>
+            <span class="row-sub">${[p.city, p.district].filter(Boolean).join(', ') || '–'}${p.living_area ? `, ${fmt.num(p.living_area)} m²` : ''}</span></td>
+          <td data-value="${ownerName}">${ownerName}</td>
+          <td class="num" data-value="${p.purchase_price ?? ''}">${fmt.euro(p.purchase_price)}</td>
+          <td class="num" data-value="${m.yields.factor ?? ''}">${levelDot(signalFor(m, 'factor'), fmt.factor(m.yields.factor))}</td>
+          <td class="num" data-value="${m.yields.net_yield ?? ''}">${levelDot(signalFor(m, 'net_yield'), fmt.pct(m.yields.net_yield))}</td>
+          <td class="num" data-value="${m.cashflow.after_tax_month ?? ''}">${m.income.annual_rent ? levelDot(signalFor(m, 'cashflow'), fmt.euroSigned(m.cashflow.after_tax_month)) : '–'}</td>
+          <td data-value="${a?.recommendation || ''}">${a ? recommendationBadge(a.recommendation) : html`<span class="muted">–</span>`}</td>
+        </tr>`)}
+        </tbody>
+      </table>
     </div>
+  </section>` : '';
+
+  const table = html`<form method="get" action="/vergleich" class="overview-form">
+    ${rows.length ? (filtered.length ? ownTable : html`<p class="muted">Keine Wohnungen mit diesem Status.</p>`) : html`<p class="muted">Du hast noch keine eigenen Wohnungen. <a href="/wohnungen/neu">Wohnung anlegen</a></p>`}
+    ${sharedTable}
     <div class="row-actions">
       <button type="submit" class="secondary" data-compare>Auswahl vergleichen</button>
       <span class="small muted">Zwei bis sechs Wohnungen anhaken.</span>
@@ -226,12 +262,12 @@ export function overview(ctx, { rows, status, mcpUrl }) {
     active: 'wohnungen',
     body: html`<div class="page-head">
         <div class="page-title"><h1>Wohnungen</h1><a class="button" href="/wohnungen/neu">Neue Wohnung</a></div>
-        <nav class="filters" aria-label="Nach Status filtern">
+        ${rows.length ? html`<nav class="filters" aria-label="Nach Status filtern">
           <a href="/wohnungen" ${!status ? raw('aria-current="true"') : ''}>Alle <span>${rows.length}</span></a>
           ${STATUSES.filter((s) => counts[s.key]).map((s) => html`<a href="/wohnungen?status=${s.key}" ${status === s.key ? raw('aria-current="true"') : ''}>${s.label} <span>${counts[s.key]}</span></a>`)}
-        </nav>
+        </nav>` : ''}
       </div>
-      ${filtered.length ? table : html`<p class="muted">Keine Wohnungen mit diesem Status.</p>`}
+      ${table}
       <details class="hint">
         <summary>Inserate von Claude auswerten lassen</summary>
         ${connectSteps(mcpUrl)}
@@ -409,7 +445,8 @@ function projectionTable(m) {
   </details>`;
 }
 
-export function detail(ctx, { property: p, analysis: a, metrics: m, notes, history, isLatest }) {
+export function detail(ctx, { property: p, analysis: a, metrics: m, notes, history, isLatest, access = {} }) {
+  const readOnly = Boolean(access.readOnly);
   const rec = a ? RECOMMENDATIONS.find((r) => r.key === a.recommendation) : null;
   const addr = [p.street, [p.zip, p.city].filter(Boolean).join(' '), p.district].filter(Boolean).join(', ');
   const facts = [
@@ -429,7 +466,9 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
       ${addr ? html`<p class="addr">${addr}</p>` : ''}
       ${facts ? html`<p class="muted">${facts}${p.url ? html`, <a href="${p.url}" rel="noopener noreferrer" target="_blank">Inserat öffnen</a>` : ''}</p>` : ''}
     </div>
-    <div class="head-actions">
+    ${readOnly
+      ? html`<div class="head-actions"><span class="status-pill">Status: ${labelOf(STATUSES, p.status)}</span></div>`
+      : html`<div class="head-actions">
     <a class="button secondary-btn" href="/wohnungen/${p.id}/bearbeiten">Bearbeiten</a>
     <form method="post" action="/wohnungen/${p.id}/status" class="status-form">
       ${csrf(ctx)}
@@ -439,8 +478,10 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
       </select>
       <button type="submit" class="secondary small-btn" data-hide-js>Speichern</button>
     </form>
-    </div>
+    </div>`}
   </header>
+
+  ${readOnly ? html`<p class="shared-banner">Geteilt von <strong>${access.ownerName}</strong>. Du kannst die Wohnung ansehen und mit den Reglern durchrechnen, aber nichts ändern.</p>` : ''}
 
   ${!isLatest ? html`<p class="alert">Du siehst eine ältere Analyse vom ${dateTime(a.created_at)}. <a href="/wohnungen/${p.id}">Zur aktuellen Analyse</a></p>` : ''}
 
@@ -462,7 +503,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
     <div class="detail-main">
       ${chain(m)}
       ${headline(m)}
-      ${assumptionLine(p, m)}
+      ${assumptionLine(p, m, readOnly)}
       <section class="charts" aria-labelledby="chart-title">
         <h2 id="chart-title">Vermögen und Cashflow über 30 Jahre</h2>
         <div class="chart" data-chart="wealth" role="img" aria-label="Immobilienwert, Restschuld und Eigenkapital über 30 Jahre"></div>
@@ -484,32 +525,39 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
 
     <aside class="detail-side">
       ${scenario(p, m)}
-      <section class="notes" aria-labelledby="notes-title">
+      ${readOnly && !notes.length ? '' : html`<section class="notes" aria-labelledby="notes-title">
         <h2 id="notes-title">Notizen</h2>
-        <form method="post" action="/wohnungen/${p.id}/notizen" class="stack">
+        ${readOnly ? '' : html`<form method="post" action="/wohnungen/${p.id}/notizen" class="stack">
           ${csrf(ctx)}
           <label class="sr-only" for="note">Neue Notiz</label>
           <textarea id="note" name="text" rows="3" placeholder="Eindrücke von der Besichtigung, Fragen an den Makler …" required></textarea>
           <button type="submit" class="secondary">Notiz speichern</button>
-        </form>
+        </form>`}
         <ul class="note-list">
           ${notes.map((n) => html`<li>
             <div class="note-meta"><span>${dateTime(n.created_at)}${n.source === 'claude' ? ', von Claude' : ''}</span>
-              <form method="post" action="/wohnungen/${p.id}/notizen/${n.id}/loeschen" class="inline">${csrf(ctx)}<button class="linkish small" type="submit" data-confirm="Notiz löschen?">Löschen</button></form></div>
+              ${readOnly ? '' : html`<form method="post" action="/wohnungen/${p.id}/notizen/${n.id}/loeschen" class="inline">${csrf(ctx)}<button class="linkish small" type="submit" data-confirm="Notiz löschen?">Löschen</button></form>`}</div>
             ${paragraphs(n.text)}
           </li>`)}
         </ul>
-      </section>
+      </section>`}
       ${history.length > 1 ? html`<section class="history" aria-labelledby="hist-title">
         <h2 id="hist-title">Frühere Analysen</h2>
         <ul>${history.map((h, i) => html`<li>${h.id === a?.id ? html`<strong>${dateTime(h.created_at)}</strong> (angezeigt)` : html`<a href="/wohnungen/${p.id}${i === 0 ? '' : `?analyse=${h.id}`}">${dateTime(h.created_at)}</a>`}${h.recommendation ? `, ${labelOf(RECOMMENDATIONS, h.recommendation)}` : ''}</li>`)}</ul>
       </section>` : ''}
-      ${!a ? html`<section class="claude-hint"><h2>Mit Claude ergänzen</h2><p class="small">Optional: Claude kann Standort, Risiken und ein Fazit ergänzen. Schreib dafür in Claude „Analysiere Wohnung ${p.id} in Quadratmeter“.</p></section>` : ''}
+      ${!a && !readOnly ? html`<section class="claude-hint"><h2>Mit Claude ergänzen</h2><p class="small">Optional: Claude kann Standort, Risiken und ein Fazit ergänzen. Schreib dafür in Claude „Analysiere Wohnung ${p.id} in Quadratmeter“.</p></section>` : ''}
+      ${readOnly
+        ? html`<section class="danger">
+          <form method="post" action="/wohnungen/${p.id}/freigaben/${ctx.user.id}/entfernen">${csrf(ctx)}
+            <button type="submit" class="secondary" data-confirm="Die Wohnung verschwindet aus deiner Übersicht. Fortfahren?">Aus meiner Übersicht entfernen</button>
+          </form>
+        </section>`
+        : html`${shareSection(ctx, p, access)}
       <section class="danger">
         <form method="post" action="/wohnungen/${p.id}/loeschen">${csrf(ctx)}
           <button type="submit" class="danger-btn" data-confirm="Wohnung „${p.title}“ mit allen Analysen und Notizen löschen?">Wohnung löschen</button>
         </form>
-      </section>
+      </section>`}
     </aside>
   </div>
   <script type="application/json" id="qm-data">${raw(JSON.stringify(clientData).replace(/</g, '\\u003c'))}</script>`;
@@ -643,7 +691,7 @@ export function admin(ctx, { users, notice, error, link }) {
 
 // ---------- Annahmen auf der Detailseite ----------
 
-function assumptionLine(p, m) {
+function assumptionLine(p, m, readOnly = false) {
   const A = m.assumptions;
   const equity = A.equity === null || A.equity === undefined
     ? `${fmt.euro(m.financing.equity)} Eigenkapital (Kaufnebenkosten)`
@@ -651,7 +699,7 @@ function assumptionLine(p, m) {
   return html`<p class="assumption-line small">
     Gerechnet mit ${equity}, ${fmt.num(A.interest_rate, 2)} % Zins, ${fmt.num(A.repayment_rate, 2)} % Tilgung,
     ${fmt.num(A.fixed_years, 0)} Jahren Zinsbindung und ${fmt.num(A.tax_rate, 0)} % Grenzsteuersatz.
-    <a href="/wohnungen/${p.id}/bearbeiten#finanzierung">Annahmen ändern</a>
+    ${readOnly ? '' : html`<a href="/wohnungen/${p.id}/bearbeiten#finanzierung">Annahmen ändern</a>`}
   </p>`;
 }
 
@@ -811,5 +859,31 @@ export function defaultsSection(ctx, values) {
       ${assumptionFields(values)}
       <div><button type="submit">Standardwerte speichern</button></div>
     </form>
+  </section>`;
+}
+
+// ---------- Freigabe ----------
+
+function shareSection(ctx, p, access) {
+  const shares = access.shares || [];
+  const candidates = access.candidates || [];
+  return html`<section class="share" aria-labelledby="share-title">
+    <h2 id="share-title">Freigeben</h2>
+    <p class="small muted">Freigegebene Nutzer sehen diese Wohnung in ihrer Übersicht und können sie nur ansehen.</p>
+    ${shares.length ? html`<ul class="share-list">${shares.map((u) => html`<li>
+        <span><strong>${u.name}</strong><span class="small muted">${u.email}</span></span>
+        <form method="post" action="/wohnungen/${p.id}/freigaben/${u.id}/entfernen" class="inline">${csrf(ctx)}<button type="submit" class="linkish small">Entfernen</button></form>
+      </li>`)}</ul>` : ''}
+    ${candidates.length
+      ? html`<form method="post" action="/wohnungen/${p.id}/freigaben" class="share-form">
+          ${csrf(ctx)}
+          <label class="sr-only" for="share-user">Nutzer</label>
+          <select id="share-user" name="user_id" required>
+            <option value="">Nutzer wählen …</option>
+            ${candidates.map((u) => html`<option value="${u.id}">${u.name} (${u.email})</option>`)}
+          </select>
+          <button type="submit" class="secondary small-btn">Freigeben</button>
+        </form>`
+      : html`<p class="small muted">${shares.length ? 'Alle anderen Nutzer haben schon Zugriff.' : 'Es gibt noch keine anderen Nutzer.'}</p>`}
   </section>`;
 }

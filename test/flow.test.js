@@ -331,3 +331,80 @@ test('Wohnung ohne Claude im Formular anlegen und bearbeiten', async () => {
   assert.equal(got3.structuredContent.assumptions.equity, undefined);
   assert.equal(got3.structuredContent.assumptions.tax_rate, 30);
 });
+
+test('Wohnung zum Ansehen freigeben', async () => {
+  const owner = await login('admin@example.com', 'geheim-geheim');
+
+  // Zweiten Nutzer einladen
+  const adminPage = await req('/admin', { cookie: owner });
+  const invite = await req('/admin/nutzer', { method: 'POST', cookie: owner, form: { name: 'Schwester', email: 'schwester@example.com', role: 'user', _csrf: csrfOf(adminPage.text) } });
+  const token = new URL(invite.text.match(/value="(http[^"]+\/passwort\?token=[^"]+)"/)[1]).searchParams.get('token');
+  await req('/passwort', { method: 'POST', form: { token, password: 'schwester-pw-123', password2: 'schwester-pw-123' } });
+  const viewer = await login('schwester@example.com', 'schwester-pw-123');
+
+  // Eigentümer legt eine Wohnung an
+  const form = await req('/wohnungen/neu', { cookie: owner });
+  const created = await req('/wohnungen/neu', {
+    method: 'POST', cookie: owner,
+    form: { _csrf: csrfOf(form.text), title: 'Geteilte Wohnung', state: 'BY', purchase_price: '200000', living_area: '50', cold_rent: '700', a_interest_rate: '4', a_tax_rate: '40' },
+  });
+  const id = Number(created.headers.get('location').split('/').pop());
+  await req(`/wohnungen/${id}/notizen`, { method: 'POST', cookie: owner, form: { _csrf: csrfOf(form.text), text: 'Notiz des Eigentümers' } });
+
+  // Vor der Freigabe: kein Zugriff
+  assert.equal((await req(`/wohnungen/${id}`, { cookie: viewer })).status, 404);
+
+  // Freigeben
+  const detail = await req(`/wohnungen/${id}`, { cookie: owner });
+  assert.match(detail.text, /Freigeben/);
+  const viewerId = detail.text.match(/<option value="(\d+)">Schwester/)[1];
+  const share = await req(`/wohnungen/${id}/freigaben`, { method: 'POST', cookie: owner, form: { _csrf: csrfOf(detail.text), user_id: viewerId } });
+  assert.equal(share.status, 303);
+
+  // Empfänger sieht die Wohnung in "Mit mir geteilt" und nur lesend
+  const overview = await req('/wohnungen', { cookie: viewer });
+  assert.match(overview.text, /Mit mir geteilt/);
+  assert.match(overview.text, /Geteilte Wohnung/);
+  const view = await req(`/wohnungen/${id}`, { cookie: viewer });
+  assert.equal(view.status, 200);
+  assert.match(view.text, /Geteilt von <strong>Korbinian<\/strong>/);
+  assert.match(view.text, /4 % Zins/); // Annahmen des Eigentümers
+  assert.match(view.text, /Notiz des Eigentümers/);
+  assert.doesNotMatch(view.text, /\/bearbeiten/);
+  assert.doesNotMatch(view.text, /Wohnung löschen/);
+  assert.doesNotMatch(view.text, /name="text"/);
+
+  // Empfänger kann nichts ändern
+  const vcsrf = csrfOf(view.text);
+  assert.equal((await req(`/wohnungen/${id}/bearbeiten`, { cookie: viewer })).status, 404);
+  assert.notEqual((await req(`/wohnungen/${id}/bearbeiten`, { method: 'POST', cookie: viewer, form: { _csrf: vcsrf, title: 'Gehackt' } })).status, 303);
+  assert.equal((await req(`/wohnungen/${id}/status`, { method: 'POST', cookie: viewer, form: { _csrf: vcsrf, status: 'gekauft' } })).status, 400);
+  assert.equal((await req(`/wohnungen/${id}/notizen`, { method: 'POST', cookie: viewer, form: { _csrf: vcsrf, text: 'x' } })).status, 400);
+  await req(`/wohnungen/${id}/loeschen`, { method: 'POST', cookie: viewer, form: { _csrf: vcsrf } });
+  assert.equal((await req(`/wohnungen/${id}/freigaben`, { method: 'POST', cookie: viewer, form: { _csrf: vcsrf, user_id: viewerId } })).status, 400);
+  const still = await req(`/wohnungen/${id}`, { cookie: owner });
+  assert.match(still.text, /Geteilte Wohnung/);
+  assert.match(still.text, /<option value="beobachtet" selected>/);
+
+  // Vergleich mit geteilter Wohnung geht
+  const ownList = await req('/wohnungen', { cookie: viewer });
+  assert.equal(ownList.status, 200);
+
+  // Claude des Empfängers sieht nur eigene Wohnungen
+  const claude = await connectClaude(viewer);
+  const got = await callTool(claude.access_token, 'get_property', { property_id: id });
+  assert.equal(got.isError, true);
+
+  // Empfänger entfernt die Freigabe für sich selbst
+  const removed = await req(`/wohnungen/${id}/freigaben/${viewerId}/entfernen`, { method: 'POST', cookie: viewer, form: { _csrf: vcsrf } });
+  assert.equal(removed.status, 303);
+  assert.equal(removed.headers.get('location'), '/wohnungen');
+  assert.equal((await req(`/wohnungen/${id}`, { cookie: viewer })).status, 404);
+
+  // Eigentümer gibt erneut frei und entfernt die Freigabe wieder
+  const d2 = await req(`/wohnungen/${id}`, { cookie: owner });
+  await req(`/wohnungen/${id}/freigaben`, { method: 'POST', cookie: owner, form: { _csrf: csrfOf(d2.text), user_id: viewerId } });
+  assert.equal((await req(`/wohnungen/${id}`, { cookie: viewer })).status, 200);
+  await req(`/wohnungen/${id}/freigaben/${viewerId}/entfernen`, { method: 'POST', cookie: owner, form: { _csrf: csrfOf(d2.text) } });
+  assert.equal((await req(`/wohnungen/${id}`, { cookie: viewer })).status, 404);
+});

@@ -192,19 +192,23 @@ export function createApp(config) {
   router.get('/wohnungen', (req, res, ctx) => {
     if (!requireUser(ctx, res)) return;
     const status = ctx.url.searchParams.get('status') || '';
-    sendHtml(res, 200, views.overview(ctx, { rows: store.listProperties(ctx.user.id), status, mcpUrl }));
+    sendHtml(res, 200, views.overview(ctx, { rows: store.listProperties(ctx.user.id), shared: store.listShared(ctx.user.id), status, mcpUrl }));
   });
 
   router.get('/wohnungen/:id', (req, res, ctx) => {
     if (!requireUser(ctx, res)) return;
-    const property = store.getProperty(ctx.user.id, ctx.params.id);
-    if (!property) return sendHtml(res, 404, views.notFound(ctx));
+    const view = store.getViewable(ctx.user.id, ctx.params.id);
+    if (!view) return sendHtml(res, 404, views.notFound(ctx));
+    const { property, ownerId, readOnly } = view;
     const latest = store.latestAnalysis(property.id);
     const requested = ctx.url.searchParams.get('analyse');
-    const analysis = requested ? store.getAnalysis(ctx.user.id, requested) : latest;
+    const analysis = requested ? store.getAnalysis(ownerId, requested) : latest;
     if (requested && (!analysis || analysis.property_id !== property.id)) return sendHtml(res, 404, views.notFound(ctx));
-    const assumptions = requested ? analysis.assumptions : store.assumptionsFor(ctx.user.id, property, analysis);
+    const assumptions = requested ? analysis.assumptions : store.assumptionsFor(ownerId, property, analysis);
     sendHtml(res, 200, views.detail(ctx, {
+      access: readOnly
+        ? { readOnly: true, ownerName: view.ownerName }
+        : { readOnly: false, shares: store.listShares(property.id), candidates: store.shareCandidates(ctx.user.id, property.id) },
       property,
       analysis,
       metrics: analyze(property, assumptions),
@@ -212,6 +216,21 @@ export function createApp(config) {
       history: store.listAnalyses(property.id),
       isLatest: !analysis || !latest || analysis.id === latest.id,
     }));
+  });
+
+  router.post('/wohnungen/:id/freigaben', async (req, res, ctx) => {
+    if (!requireUser(ctx, res)) return;
+    const body = await ctx.form();
+    store.addShare(ctx.user.id, ctx.params.id, body.user_id);
+    redirect(res, `/wohnungen/${Number(ctx.params.id)}#share-title`);
+  });
+
+  router.post('/wohnungen/:id/freigaben/:userId/entfernen', async (req, res, ctx) => {
+    if (!requireUser(ctx, res)) return;
+    await ctx.form();
+    store.removeShare(ctx.user.id, ctx.params.id, ctx.params.userId);
+    const self = Number(ctx.params.userId) === ctx.user.id && !store.getProperty(ctx.user.id, ctx.params.id);
+    redirect(res, self ? '/wohnungen' : `/wohnungen/${Number(ctx.params.id)}#share-title`);
   });
 
   router.post('/wohnungen/:id/status', async (req, res, ctx) => {
@@ -249,9 +268,9 @@ export function createApp(config) {
       ...(ctx.url.searchParams.get('id') || '').split(','),
     ].flatMap((s) => String(s).split(',')).map(Number).filter((n) => Number.isInteger(n) && n > 0);
     const unique = [...new Set(ids)].slice(0, 6);
-    const items = unique.map((id) => store.getProperty(ctx.user.id, id)).filter(Boolean).map((p) => {
+    const items = unique.map((id) => store.getViewable(ctx.user.id, id)).filter(Boolean).map(({ property: p, ownerId }) => {
       const a = store.latestAnalysis(p.id);
-      return { p, a, m: analyze(p, store.assumptionsFor(ctx.user.id, p, a), { breakEven: false }) };
+      return { p, a, m: analyze(p, store.assumptionsFor(ownerId, p, a), { breakEven: false }) };
     });
     if (items.length < 2) {
       return sendHtml(res, 400, views.message({ ctx, title: 'Zu wenige Wohnungen', text: 'Wähle in der Übersicht mindestens zwei Wohnungen aus.', link: { href: '/wohnungen', label: 'Zur Übersicht' } }));

@@ -246,6 +246,75 @@ export function createStore(db) {
       });
     },
 
+    // ----- Freigaben (nur ansehen) -----
+
+    // Eigene oder freigegebene Wohnung: { property, readOnly, ownerId, ownerName } oder null.
+    getViewable(userId, id) {
+      const own = store.getProperty(userId, id);
+      if (own) return { property: own, readOnly: false, ownerId: userId, ownerName: null };
+      const row = db.get(
+        `SELECT p.*, u.name AS owner_name FROM properties p
+           JOIN property_shares s ON s.property_id = p.id
+           JOIN users u ON u.id = p.user_id
+          WHERE p.id = ? AND s.user_id = ? AND u.active = 1`,
+        Number(id), userId
+      );
+      if (!row) return null;
+      return { property: hydrateProperty(row), readOnly: true, ownerId: row.user_id, ownerName: row.owner_name };
+    },
+
+    listShared(userId) {
+      const rows = db.all(
+        `SELECT p.*, u.name AS owner_name FROM properties p
+           JOIN property_shares s ON s.property_id = p.id
+           JOIN users u ON u.id = p.user_id
+          WHERE s.user_id = ? AND u.active = 1
+          ORDER BY p.updated_at DESC`,
+        userId
+      );
+      const defaultsByOwner = new Map();
+      return rows.map((r) => {
+        if (!defaultsByOwner.has(r.user_id)) defaultsByOwner.set(r.user_id, store.userDefaults(r.user_id));
+        const property = hydrateProperty(r);
+        const analysis = hydrateAnalysis(latestAnalysisRow(r.id));
+        const assumptions = effectiveAssumptions(property, analysis, defaultsByOwner.get(r.user_id));
+        return { property, analysis, assumptions, ownerName: r.owner_name, metrics: analyze(property, assumptions, { breakEven: false }) };
+      });
+    },
+
+    listShares(propertyId) {
+      return db.all(
+        `SELECT u.id, u.name, u.email, s.created_at FROM property_shares s JOIN users u ON u.id = s.user_id
+          WHERE s.property_id = ? ORDER BY u.name COLLATE NOCASE`,
+        propertyId
+      );
+    },
+
+    shareCandidates(ownerId, propertyId) {
+      return db.all(
+        `SELECT id, name, email FROM users
+          WHERE active = 1 AND id != ? AND id NOT IN (SELECT user_id FROM property_shares WHERE property_id = ?)
+          ORDER BY name COLLATE NOCASE`,
+        ownerId, propertyId
+      );
+    },
+
+    addShare(ownerId, propertyId, targetUserId) {
+      const property = store.requireProperty(ownerId, propertyId);
+      const target = db.get('SELECT id, name FROM users WHERE id = ? AND active = 1', Number(targetUserId));
+      if (!target || target.id === ownerId) throw new ValidationError('Diesen Nutzer gibt es nicht.');
+      db.run('INSERT OR IGNORE INTO property_shares (property_id, user_id, created_at) VALUES (?, ?, ?)', property.id, target.id, nowIso());
+      return target;
+    },
+
+    // Der Eigentümer kann jede Freigabe entfernen, der Empfänger nur seine eigene.
+    removeShare(actorId, propertyId, targetUserId) {
+      const property = db.get('SELECT id, user_id FROM properties WHERE id = ?', Number(propertyId));
+      if (!property) return false;
+      if (property.user_id !== actorId && Number(targetUserId) !== actorId) throw new ValidationError('Das darf nur der Eigentümer.');
+      return db.run('DELETE FROM property_shares WHERE property_id = ? AND user_id = ?', property.id, Number(targetUserId)).changes > 0;
+    },
+
     getProperty(userId, id) {
       return hydrateProperty(db.get('SELECT * FROM properties WHERE id = ? AND user_id = ?', Number(id), userId));
     },

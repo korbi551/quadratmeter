@@ -106,6 +106,16 @@ const MIGRATIONS = [
   `,
   // 2: eigene Standardwerte (Finanzierung, Steuer) pro Nutzer
   `ALTER TABLE users ADD COLUMN defaults TEXT;`,
+  // 3: Wohnungen mit anderen Nutzern teilen (nur ansehen)
+  `
+  CREATE TABLE property_shares (
+    property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (property_id, user_id)
+  );
+  CREATE INDEX property_shares_user ON property_shares(user_id);
+  `,
 ];
 
 function clean(params) {

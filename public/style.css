@@ -381,3 +381,16 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 0.8; }
 @media (max-width: 420px) {
   .field-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- Freigabe ---------- */
+.shared-banner { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 0.6rem 0.9rem; border-radius: 0 4px 4px 0; max-width: none; margin-bottom: 1.5rem; }
+.status-pill { font-size: 0.9rem; color: var(--ink-2); border: 1px solid var(--rule); border-radius: 999px; padding: 0.3rem 0.8rem; background: var(--sheet); }
+.share-list { list-style: none; padding: 0; margin: 0.5rem 0 0.75rem; }
+.share-list li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.45rem 0; border-bottom: 1px solid var(--rule); font-size: 0.9rem; }
+.share-list li > span { display: grid; min-width: 0; }
+.share-list .muted { overflow: hidden; text-overflow: ellipsis; }
+.share-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.share-form select { flex: 1; min-width: 0; font-size: 0.9rem; padding: 0.4rem 0.5rem; }
+.share p:last-child { margin-bottom: 0; }
+.shared-list { margin-top: 2.5rem; }
+.shared-list h2 { margin-bottom: 0.2rem; }
