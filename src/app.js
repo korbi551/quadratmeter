@@ -215,6 +215,7 @@ export function createApp(config) {
       notes: store.listNotes(property.id),
       history: store.listAnalyses(property.id),
       isLatest: !analysis || !latest || analysis.id === latest.id,
+      tab: ctx.url.searchParams.get('tab') || 'ueberblick',
     }));
   });
 
@@ -222,7 +223,7 @@ export function createApp(config) {
     if (!requireUser(ctx, res)) return;
     const body = await ctx.form();
     store.addShare(ctx.user.id, ctx.params.id, body.user_id);
-    redirect(res, `/wohnungen/${Number(ctx.params.id)}#share-title`);
+    redirect(res, `/wohnungen/${Number(ctx.params.id)}?tab=daten#share-title`);
   });
 
   router.post('/wohnungen/:id/freigaben/:userId/entfernen', async (req, res, ctx) => {
@@ -230,7 +231,7 @@ export function createApp(config) {
     await ctx.form();
     store.removeShare(ctx.user.id, ctx.params.id, ctx.params.userId);
     const self = Number(ctx.params.userId) === ctx.user.id && !store.getProperty(ctx.user.id, ctx.params.id);
-    redirect(res, self ? '/wohnungen' : `/wohnungen/${Number(ctx.params.id)}#share-title`);
+    redirect(res, self ? '/wohnungen' : `/wohnungen/${Number(ctx.params.id)}?tab=daten#share-title`);
   });
 
   router.post('/wohnungen/:id/status', async (req, res, ctx) => {
@@ -244,14 +245,14 @@ export function createApp(config) {
     if (!requireUser(ctx, res)) return;
     const body = await ctx.form();
     store.addNote(ctx.user.id, ctx.params.id, body.text, 'web');
-    redirect(res, `/wohnungen/${Number(ctx.params.id)}#notes-title`);
+    redirect(res, `/wohnungen/${Number(ctx.params.id)}?tab=daten#notes-title`);
   });
 
   router.post('/wohnungen/:id/notizen/:noteId/loeschen', async (req, res, ctx) => {
     if (!requireUser(ctx, res)) return;
     await ctx.form();
     store.deleteNote(ctx.user.id, ctx.params.noteId);
-    redirect(res, `/wohnungen/${Number(ctx.params.id)}#notes-title`);
+    redirect(res, `/wohnungen/${Number(ctx.params.id)}?tab=daten#notes-title`);
   });
 
   router.post('/wohnungen/:id/loeschen', async (req, res, ctx) => {

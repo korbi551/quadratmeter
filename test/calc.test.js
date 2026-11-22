@@ -77,3 +77,18 @@ test('IRR ist plausibel', () => {
   assert.ok(m.returns.irr > -0.5 && m.returns.irr < 0.5);
   assert.equal(m.projection.length, 30);
 });
+
+test('Rechenweg geht auf (Erklärung = Rechnung)', () => {
+  const m = analyze({ ...flat, parking_rent: 40 }, { tax_rate: 42, equity: 40000, renovation_costs: 5000 });
+  const e = m.explain;
+  const near = (a, b, label) => assert.ok(Math.abs(a - b) < 0.05, `${label}: ${a} ≠ ${b}`);
+  near(e.rent_month - e.vacancy_month - e.non_allocable_month - e.own_maintenance_month, e.noi_month, 'Reinertrag');
+  near(e.noi_month - e.interest_month - e.principal_month, e.cf_before_month, 'Cashflow vor Steuern');
+  near(e.interest_month + e.principal_month, m.financing.rate_month, 'Rate');
+  near(e.cf_before_month + e.tax_saving_month, e.cf_after_month, 'Cashflow nach Steuern');
+  near(e.cf_after_month, m.cashflow.after_tax_month, 'Cashflow wie Kennzahl');
+  near(e.rent_year - e.vacancy_year - e.deductible_hausgeld_year - e.maintenance_year - e.interest_year - e.afa_year, e.taxable_year, 'Steuerliches Ergebnis');
+  near(e.taxable_year * 0.42, e.tax_year, 'Steuer');
+  near(m.purchase.total_investment - m.financing.equity, m.financing.loan, 'Darlehen');
+  near(e.sale_value - e.sale_debt, e.sale_proceeds, 'Verkaufserlös');
+});

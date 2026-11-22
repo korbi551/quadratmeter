@@ -310,6 +310,35 @@ export function analyze(property = {}, assumptions = {}, { breakEven = true } = 
     projection,
   };
 
+  // Rechenweg für die Erklärung (1. Jahr; Monatswerte = Jahreswert ÷ 12)
+  const sale = projection[holding - 1];
+  result.explain = {
+    rent_month: round(rentMonth),
+    vacancy_month: round(vacancy / 12),
+    non_allocable_month: round(nonAllocMonth),
+    own_maintenance_month: round(ownMaintenance / 12),
+    noi_month: round(noi / 12),
+    interest_month: round(y1.interest / 12),
+    principal_month: round(y1.principal / 12),
+    cf_before_month: round(y1.cashflow_before_tax / 12),
+    rent_year: round(annualRent),
+    vacancy_year: round(vacancy),
+    deductible_hausgeld_year: round((nonAllocMonth - reserveMonth) * 12),
+    maintenance_year: round(ownMaintenance),
+    interest_year: y1.interest,
+    afa_year: round(afaYear),
+    taxable_year: y1.taxable_income,
+    tax_year: y1.tax,
+    tax_month: round(y1.tax / 12),
+    tax_saving_month: round(-y1.tax / 12),
+    cf_after_month: round(y1.cashflow_after_tax / 12),
+    acquisition_costs: round(basePrice + ancillary),
+    sum_cashflows: round(projection.slice(0, holding).reduce((s, r) => s + r.cashflow_after_tax, 0)),
+    sale_value: sale.value,
+    sale_debt: sale.remaining_debt,
+    sale_proceeds: round(sale.value - sale.remaining_debt),
+  };
+
   result.break_even_price = breakEven && price ? breakEvenPrice(p, assumptions) : null;
   result.signals = signals(result, p);
   return result;

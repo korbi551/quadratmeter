@@ -309,8 +309,9 @@ function headline(m) {
       return html`<div class="figure" data-signal-box="${h.signal || ''}">
         <span class="figure-label">${h.label}</span>
         <span class="figure-value" data-metric="${h.key}" data-format="${h.format}">${formatValue(h.format, v)}</span>
-        <span class="figure-note">${h.note}${h.key === 'returns.irr' ? html` (<span data-metric="returns.holding_years" data-format="plain">${m.returns.holding_years}</span>&nbsp;J.)` : ''}</span>
         <span class="figure-signal" data-signal="${h.signal || ''}">${lvl ? levelDot(lvl) : ''}</span>
+        <span class="figure-note">${h.note}${h.key === 'returns.irr' ? html` Verkauf nach <span data-metric="returns.holding_years" data-format="plain">${m.returns.holding_years}</span>&nbsp;Jahren.` : ''}</span>
+        <a class="figure-link" href="?tab=rechnung#${h.explain}" data-goto="${h.explain}">Wie gerechnet?</a>
       </div>`;
     })}
   </section>`;
@@ -445,8 +446,17 @@ function projectionTable(m) {
   </details>`;
 }
 
-export function detail(ctx, { property: p, analysis: a, metrics: m, notes, history, isLatest, access = {} }) {
+const TABS = [
+  { key: 'ueberblick', label: 'Überblick' },
+  { key: 'rechnung', label: 'Rechnung' },
+  { key: 'prognose', label: 'Prognose' },
+  { key: 'standort', label: 'Standort & Risiken' },
+  { key: 'daten', label: 'Notizen & Daten' },
+];
+
+export function detail(ctx, { property: p, analysis: a, metrics: m, notes, history, isLatest, access = {}, tab = 'ueberblick' }) {
   const readOnly = Boolean(access.readOnly);
+  const active = TABS.some((t) => t.key === tab) ? tab : 'ueberblick';
   const rec = a ? RECOMMENDATIONS.find((r) => r.key === a.recommendation) : null;
   const addr = [p.street, [p.zip, p.city].filter(Boolean).join(' '), p.district].filter(Boolean).join(', ');
   const facts = [
@@ -457,8 +467,11 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
     p.rented === true ? 'vermietet' : p.rented === false ? 'leer' : null,
   ].filter(Boolean).join(', ');
   const clientData = { property: p, assumptions: m.assumptions };
+  const keep = ctx.url?.searchParams.get('analyse') ? `&analyse=${encodeURIComponent(ctx.url.searchParams.get('analyse'))}` : '';
+  const redRisks = (a?.risks || []).filter((r) => r.level === 'red').length;
+  const panel = (key, content) => html`<section class="tab-panel" id="tab-${key}" role="tabpanel" aria-labelledby="tabbtn-${key}" ${key !== active ? raw('hidden') : ''}>${content}</section>`;
 
-  const body = html`
+  const header = html`
   <a class="back" href="/wohnungen">Alle Wohnungen</a>
   <header class="prop-head">
     <div class="prop-title">
@@ -480,89 +493,236 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
     </form>
     </div>`}
   </header>
-
   ${readOnly ? html`<p class="shared-banner">Geteilt von <strong>${access.ownerName}</strong>. Du kannst die Wohnung ansehen und mit den Reglern durchrechnen, aber nichts ändern.</p>` : ''}
-
   ${!isLatest ? html`<p class="alert">Du siehst eine ältere Analyse vom ${dateTime(a.created_at)}. <a href="/wohnungen/${p.id}">Zur aktuellen Analyse</a></p>` : ''}
+  <nav class="tabs" role="tablist" aria-label="Bereiche der Wohnung" data-tabs>
+    ${TABS.map((t) => html`<a role="tab" id="tabbtn-${t.key}" href="?tab=${t.key}${keep}" data-tab="${t.key}" aria-controls="tab-${t.key}" aria-selected="${t.key === active ? 'true' : 'false'}" ${t.key === active ? '' : raw('tabindex="-1"')}>${t.label}${t.key === 'standort' && redRisks ? html` <span class="tab-badge" title="Rote Risiken">${redRisks}</span>` : ''}${t.key === 'daten' && notes.length ? html` <span class="tab-count">${notes.length}</span>` : ''}</a>`)}
+  </nav>`;
 
-  ${a ? html`<section class="verdict verdict-${rec?.level || 'none'}">
-      <div class="verdict-main">
-        <span class="verdict-label">Empfehlung</span>
-        <strong>${rec ? rec.label : 'Keine Empfehlung'}</strong>
-        ${a.max_price ? html`<span>Maximaler Kaufpreis: <b>${fmt.euro(a.max_price)}</b></span>` : ''}
-        ${m.break_even_price ? html`<span>Cashflow-neutral bei: <b data-metric="break_even_price" data-format="euro">${fmt.euro(m.break_even_price)}</b></span>` : ''}
+  const overviewPanel = panel('ueberblick', html`
+    <div class="detail-grid">
+      <div class="detail-main">
+        ${a ? html`<section class="verdict verdict-${rec?.level || 'none'}">
+            <div class="verdict-main">
+              <span class="verdict-label">Empfehlung</span>
+              <strong>${rec ? rec.label : 'Keine Empfehlung'}</strong>
+              ${a.max_price ? html`<span>Maximaler Kaufpreis: <b>${fmt.euro(a.max_price)}</b></span>` : ''}
+              ${a.location?.overall?.score ? html`<span>Standort: <b>${fmt.num(a.location.overall.score)} / 10</b></span>` : ''}
+            </div>
+            <div class="verdict-text">${a.summary ? paragraphs(a.summary) : html`<p class="muted">Kein Fazit hinterlegt.</p>`}
+              <p class="small muted">Analyse vom ${dateTime(a.created_at)}</p></div>
+          </section>` : ''}
+        ${m.warnings.length ? html`<ul class="warnings">${m.warnings.map((w) => html`<li>${w}</li>`)}</ul>` : ''}
+        ${headline(m)}
+        ${assumptionLine(p, m, readOnly)}
+        ${chain(m)}
+        ${m.break_even_price ? html`<p class="small break-even">Damit sich die Wohnung im 1. Jahr selbst trägt, dürfte sie höchstens <b data-metric="break_even_price" data-format="euro">${fmt.euro(m.break_even_price)}</b> kosten (bei sonst gleichen Annahmen).</p>` : ''}
       </div>
-      <div class="verdict-text">${a.summary ? paragraphs(a.summary) : html`<p class="muted">Kein Fazit hinterlegt.</p>`}
-        <p class="small muted">Analyse vom ${dateTime(a.created_at)}</p></div>
-    </section>`
-    : ''}
+      <aside class="detail-side">${scenario(p, m)}</aside>
+    </div>`);
 
-  ${m.warnings.length ? html`<ul class="warnings">${m.warnings.map((w) => html`<li>${w}</li>`)}</ul>` : ''}
+  const calcPanel = panel('rechnung', explainSection(p, m));
 
-  <div class="detail-grid">
-    <div class="detail-main">
-      ${chain(m)}
-      ${headline(m)}
-      ${assumptionLine(p, m, readOnly)}
-      <section class="charts" aria-labelledby="chart-title">
-        <h2 id="chart-title">Vermögen und Cashflow über 30 Jahre</h2>
-        <div class="chart" data-chart="wealth" role="img" aria-label="Immobilienwert, Restschuld und Eigenkapital über 30 Jahre"></div>
-        <div class="chart chart-small" data-chart="cashflow" role="img" aria-label="Cashflow nach Steuern pro Jahr"></div>
-        <noscript><p class="muted">Die Diagramme brauchen JavaScript. Die Tabelle unten zeigt dieselben Werte.</p></noscript>
-        ${projectionTable(m)}
-      </section>
-      <section aria-labelledby="all-title">
-        <h2 id="all-title">Alle Zahlen</h2>
-        ${metricTables(m)}
-        <p class="small muted">Vereinfachte Rechnung: Annuitätendarlehen mit gleichem Zins nach der Zinsbindung, Steuer mit Grenzsteuersatz, Verkauf nach der Haltedauer steuerfrei (ab 10 Jahren) und ohne Verkaufskosten. Ersetzt keine Steuer- oder Finanzberatung.</p>
-      </section>
-      ${location(a)}
-      ${risks(a, m)}
-      ${stammdaten(p)}
-      ${a?.sources?.length ? html`<section aria-labelledby="src-title"><h2 id="src-title">Quellen</h2>
-        <ul class="sources">${a.sources.map((s) => html`<li><a href="${s.url}" rel="noopener noreferrer" target="_blank">${s.title}</a></li>`)}</ul></section>` : ''}
-    </div>
+  const forecastPanel = panel('prognose', html`
+    <section class="charts" aria-labelledby="chart-title">
+      <h2 id="chart-title">Vermögen und Cashflow über 30 Jahre</h2>
+      <p class="lead small">Die Prognose rechnet mit ${fmt.num(m.assumptions.rent_growth_pct, 1)} % Mietsteigerung, ${fmt.num(m.assumptions.cost_growth_pct, 1)} % Kostensteigerung und ${fmt.num(m.assumptions.value_growth_pct, 1)} % Wertsteigerung pro Jahr. Nach der Zinsbindung gilt derselbe Zins weiter.</p>
+      <div class="chart" data-chart="wealth" role="img" aria-label="Immobilienwert, Restschuld und Eigenkapital über 30 Jahre"></div>
+      <div class="chart chart-small" data-chart="cashflow" role="img" aria-label="Cashflow nach Steuern pro Jahr"></div>
+      <noscript><p class="muted">Die Diagramme brauchen JavaScript. Die Tabelle unten zeigt dieselben Werte.</p></noscript>
+      ${projectionTable(m)}
+    </section>`);
 
-    <aside class="detail-side">
-      ${scenario(p, m)}
-      ${readOnly && !notes.length ? '' : html`<section class="notes" aria-labelledby="notes-title">
-        <h2 id="notes-title">Notizen</h2>
-        ${readOnly ? '' : html`<form method="post" action="/wohnungen/${p.id}/notizen" class="stack">
-          ${csrf(ctx)}
-          <label class="sr-only" for="note">Neue Notiz</label>
-          <textarea id="note" name="text" rows="3" placeholder="Eindrücke von der Besichtigung, Fragen an den Makler …" required></textarea>
-          <button type="submit" class="secondary">Notiz speichern</button>
-        </form>`}
-        <ul class="note-list">
-          ${notes.map((n) => html`<li>
-            <div class="note-meta"><span>${dateTime(n.created_at)}${n.source === 'claude' ? ', von Claude' : ''}</span>
-              ${readOnly ? '' : html`<form method="post" action="/wohnungen/${p.id}/notizen/${n.id}/loeschen" class="inline">${csrf(ctx)}<button class="linkish small" type="submit" data-confirm="Notiz löschen?">Löschen</button></form>`}</div>
-            ${paragraphs(n.text)}
-          </li>`)}
-        </ul>
-      </section>`}
-      ${history.length > 1 ? html`<section class="history" aria-labelledby="hist-title">
-        <h2 id="hist-title">Frühere Analysen</h2>
-        <ul>${history.map((h, i) => html`<li>${h.id === a?.id ? html`<strong>${dateTime(h.created_at)}</strong> (angezeigt)` : html`<a href="/wohnungen/${p.id}${i === 0 ? '' : `?analyse=${h.id}`}">${dateTime(h.created_at)}</a>`}${h.recommendation ? `, ${labelOf(RECOMMENDATIONS, h.recommendation)}` : ''}</li>`)}</ul>
-      </section>` : ''}
-      ${!a && !readOnly ? html`<section class="claude-hint"><h2>Mit Claude ergänzen</h2><p class="small">Optional: Claude kann Standort, Risiken und ein Fazit ergänzen. Schreib dafür in Claude „Analysiere Wohnung ${p.id} in Quadratmeter“.</p></section>` : ''}
-      ${readOnly
-        ? html`<section class="danger">
-          <form method="post" action="/wohnungen/${p.id}/freigaben/${ctx.user.id}/entfernen">${csrf(ctx)}
-            <button type="submit" class="secondary" data-confirm="Die Wohnung verschwindet aus deiner Übersicht. Fortfahren?">Aus meiner Übersicht entfernen</button>
-          </form>
-        </section>`
-        : html`${shareSection(ctx, p, access)}
-      <section class="danger">
-        <form method="post" action="/wohnungen/${p.id}/loeschen">${csrf(ctx)}
-          <button type="submit" class="danger-btn" data-confirm="Wohnung „${p.title}“ mit allen Analysen und Notizen löschen?">Wohnung löschen</button>
-        </form>
-      </section>`}
-    </aside>
-  </div>
+  const locationPanel = panel('standort', html`
+    ${location(a) || html`<section><h2>Standort</h2><p class="muted">Noch keine Standortbewertung.${readOnly ? '' : html` Optional kann Claude sie ergänzen: „Analysiere Wohnung ${p.id} in Quadratmeter“.`}</p></section>`}
+    ${risks(a, m)}
+    ${a?.sources?.length ? html`<section aria-labelledby="src-title"><h2 id="src-title">Quellen</h2>
+      <ul class="sources">${a.sources.map((s) => html`<li><a href="${s.url}" rel="noopener noreferrer" target="_blank">${s.title}</a></li>`)}</ul></section>` : ''}`);
+
+  const dataPanel = panel('daten', html`
+    <div class="data-grid">
+      <div>
+        ${readOnly && !notes.length ? '' : html`<section class="notes" aria-labelledby="notes-title">
+          <h2 id="notes-title">Notizen</h2>
+          ${readOnly ? '' : html`<form method="post" action="/wohnungen/${p.id}/notizen" class="stack">
+            ${csrf(ctx)}
+            <label class="sr-only" for="note">Neue Notiz</label>
+            <textarea id="note" name="text" rows="3" placeholder="Eindrücke von der Besichtigung, Fragen an den Makler …" required></textarea>
+            <div><button type="submit" class="secondary">Notiz speichern</button></div>
+          </form>`}
+          <ul class="note-list">
+            ${notes.map((n) => html`<li>
+              <div class="note-meta"><span>${dateTime(n.created_at)}${n.source === 'claude' ? ', von Claude' : ''}</span>
+                ${readOnly ? '' : html`<form method="post" action="/wohnungen/${p.id}/notizen/${n.id}/loeschen" class="inline">${csrf(ctx)}<button class="linkish small" type="submit" data-confirm="Notiz löschen?">Löschen</button></form>`}</div>
+              ${paragraphs(n.text)}
+            </li>`)}
+          </ul>
+        </section>`}
+        ${stammdaten(p)}
+      </div>
+      <div class="side-stack">
+        ${readOnly ? '' : shareSection(ctx, p, access)}
+        ${history.length > 1 ? html`<section class="history" aria-labelledby="hist-title">
+          <h2 id="hist-title">Frühere Analysen</h2>
+          <ul>${history.map((h, i) => html`<li>${h.id === a?.id ? html`<strong>${dateTime(h.created_at)}</strong> (angezeigt)` : html`<a href="/wohnungen/${p.id}${i === 0 ? '' : `?analyse=${h.id}`}">${dateTime(h.created_at)}</a>`}${h.recommendation ? `, ${labelOf(RECOMMENDATIONS, h.recommendation)}` : ''}</li>`)}</ul>
+        </section>` : ''}
+        ${!a && !readOnly ? html`<section class="claude-hint"><h2>Mit Claude ergänzen</h2><p class="small">Optional: Claude kann Standort, Risiken und ein Fazit ergänzen. Schreib dafür in Claude „Analysiere Wohnung ${p.id} in Quadratmeter“.</p></section>` : ''}
+        <section class="danger">
+          ${readOnly
+            ? html`<form method="post" action="/wohnungen/${p.id}/freigaben/${ctx.user.id}/entfernen">${csrf(ctx)}
+                <button type="submit" class="secondary" data-confirm="Die Wohnung verschwindet aus deiner Übersicht. Fortfahren?">Aus meiner Übersicht entfernen</button></form>`
+            : html`<form method="post" action="/wohnungen/${p.id}/loeschen">${csrf(ctx)}
+                <button type="submit" class="danger-btn" data-confirm="Wohnung „${p.title}“ mit allen Analysen und Notizen löschen?">Wohnung löschen</button></form>`}
+        </section>
+      </div>
+    </div>`);
+
+  const body = html`${header}
+  <div class="tab-panels">${overviewPanel}${calcPanel}${forecastPanel}${locationPanel}${dataPanel}</div>
+  <p class="scenario-flag-global small" data-scenario-flag-global hidden>Szenario aktiv: Die Zahlen auf allen Reitern zeigen deine Regler-Werte. <a href="?tab=ueberblick" data-goto-tab="ueberblick">Zu den Reglern</a></p>
   <script type="application/json" id="qm-data">${raw(JSON.stringify(clientData).replace(/</g, '\\u003c'))}</script>`;
 
   return layout(ctx, { title: p.title, body, active: 'wohnungen' });
+}
+
+// ---------- Rechenweg ----------
+
+// Eine Rechenzeile: Vorzeichen, Bezeichnung, Betrag (aktualisiert sich mit den Reglern), Erklärung
+function line(sign, label, key, format, note = '') {
+  return { sign, label, key, format, note };
+}
+
+function ledger(m, rows, { caption } = {}) {
+  return html`<table class="ledger">
+    ${caption ? html`<caption class="sr-only">${caption}</caption>` : ''}
+    <tbody>${rows.map((r) => html`<tr class="${r.sign === '=' ? 'total' : ''}">
+      <td class="op" aria-hidden="true">${r.sign}</td>
+      <th scope="row">${r.label}${r.note ? html`<span class="ledger-note">${r.note}</span>` : ''}</th>
+      <td class="amount" data-metric="${r.key}" data-format="${r.format}">${formatValue(r.format, get(m, r.key))}</td>
+    </tr>`)}</tbody>
+  </table>`;
+}
+
+const val = (m, key, format) => html`<b data-metric="${key}" data-format="${format}">${formatValue(format, get(m, key))}</b>`;
+
+function explainSection(p, m) {
+  const A = m.assumptions;
+  const pct = (v) => `${fmt.num(v, 2)} %`;
+  const dyn = (k) => html`<span data-metric="assumptions.${k}" data-format="pctPlain">${pct(A[k])}</span>`;
+  const years = html`<span data-metric="returns.holding_years" data-format="plain">${m.returns.holding_years}</span>`;
+  const equityNote = A.equity === null || A.equity === undefined ? 'Standard: Du zahlst die Kaufnebenkosten selbst.' : 'Dein eingesetztes Geld.';
+  return html`
+  <div class="explain">
+    <p class="lead">Hier siehst du, wie Quadratmeter die Kennzahlen dieser Wohnung ausrechnet – mit ihren echten Zahlen, für das erste Jahr. Wenn du im Überblick die Regler bewegst, ändern sich auch diese Werte.</p>
+
+    <ol class="steps-explain">
+      <li id="rechnung-kauf">
+        <h2>Was die Wohnung insgesamt kostet</h2>
+        <p>Zum Kaufpreis kommen die Kaufnebenkosten. Die Grunderwerbsteuer hängt vom Bundesland ab, Notar, Grundbuch und Makler werden vom Kaufpreis berechnet.</p>
+        ${ledger(m, [
+          line('', 'Kaufpreis' + (m.purchase.parking_price ? ' inkl. Stellplatz' : ''), 'purchase.base_price', 'euro'),
+          line('+', 'Grunderwerbsteuer', 'purchase.transfer_tax', 'euro', html`${dyn('transfer_tax_pct')} vom Kaufpreis`),
+          line('+', 'Notar', 'purchase.notary', 'euro', html`${dyn('notary_pct')}`),
+          line('+', 'Grundbuch', 'purchase.land_registry', 'euro', html`${dyn('land_registry_pct')}`),
+          line('+', 'Makler', 'purchase.broker', 'euro', html`${dyn('broker_pct')}`),
+          ...(m.purchase.renovation ? [line('+', 'Renovierung', 'purchase.renovation', 'euro')] : []),
+          line('=', 'Gesamtinvestition', 'purchase.total_investment', 'euro'),
+        ], { caption: 'Gesamtinvestition' })}
+      </li>
+
+      <li id="rechnung-finanzierung">
+        <h2>Wie finanziert wird</h2>
+        <p>Was nicht aus eigenem Geld kommt, leiht die Bank. Die monatliche Rate bleibt gleich: Am Anfang ist sie fast nur Zins, mit der Zeit wird der Tilgungsanteil größer.</p>
+        ${ledger(m, [
+          line('', 'Gesamtinvestition', 'purchase.total_investment', 'euro'),
+          line('−', 'Eigenkapital', 'financing.equity', 'euro', equityNote),
+          line('=', 'Darlehen', 'financing.loan', 'euro'),
+        ], { caption: 'Darlehen' })}
+        <p class="formula">Rate pro Monat = Darlehen × (${dyn('interest_rate')} Zins + ${dyn('repayment_rate')} Tilgung) ÷ 12 = ${val(m, 'financing.rate_month', 'euro')}</p>
+      </li>
+
+      <li id="rechnung-cashflow">
+        <h2>Was jeden Monat übrig bleibt</h2>
+        <p>Von der Kaltmiete gehen die Kosten ab, die du als Eigentümer selbst trägst. Was übrig bleibt, ist der Reinertrag. Davon zahlst du die Rate an die Bank.</p>
+        ${ledger(m, [
+          line('', 'Kaltmiete' + (m.income.parking_rent_month ? ' inkl. Stellplatz' : ''), 'explain.rent_month', 'euro2'),
+          line('−', 'Mietausfall', 'explain.vacancy_month', 'euro2', html`Reserve für Leerstand, ${dyn('vacancy_pct')} der Miete`),
+          line('−', 'Nicht umlagefähiges Hausgeld', 'explain.non_allocable_month', 'euro2', 'Verwaltung, Rücklage, Reparaturen – zahlt der Mieter nicht'),
+          line('−', 'Eigene Instandhaltung', 'explain.own_maintenance_month', 'euro2', `Reserve für Bad, Böden, Küche: ${fmt.num(A.own_maintenance_per_sqm, 1)} € pro m² und Jahr`),
+          line('=', 'Reinertrag', 'explain.noi_month', 'euro2'),
+          line('−', 'Zinsen', 'explain.interest_month', 'euro2', 'Anteil der Rate im 1. Jahr'),
+          line('−', 'Tilgung', 'explain.principal_month', 'euro2', 'Anteil der Rate im 1. Jahr – baut Vermögen auf'),
+          line('=', 'Cashflow vor Steuern', 'explain.cf_before_month', 'euroSigned2'),
+          line('+', 'Steuerersparnis', 'explain.tax_saving_month', 'euroSigned2', 'negativ = Steuer, die du zahlst (siehe nächster Schritt)'),
+          line('=', 'Cashflow nach Steuern', 'explain.cf_after_month', 'euroSigned2'),
+        ], { caption: 'Monatlicher Cashflow' })}
+        <p class="small muted">Die Tilgung ist ein Kostenpunkt im Geldbeutel, aber kein Verlust: Sie senkt deine Schulden. Darum kann ein negativer Cashflow trotzdem Vermögen aufbauen.</p>
+      </li>
+
+      <li id="rechnung-steuer">
+        <h2>Wie die Steuer wirkt</h2>
+        <p>Mieteinnahmen musst du versteuern, aber viele Kosten darfst du abziehen – auch die Abschreibung (AfA) auf das Gebäude. Die Tilgung und die Zuführung zur Rücklage zählen nicht. Ist das Ergebnis negativ, sinkt deine Steuer auf das übrige Einkommen.</p>
+        ${ledger(m, [
+          line('', 'Kaltmiete im Jahr', 'explain.rent_year', 'euro'),
+          line('−', 'Mietausfall', 'explain.vacancy_year', 'euro'),
+          line('−', 'Hausgeld ohne Rücklage', 'explain.deductible_hausgeld_year', 'euro', 'die Rücklage zählt erst, wenn sie ausgegeben wird'),
+          line('−', 'Eigene Instandhaltung', 'explain.maintenance_year', 'euro'),
+          line('−', 'Zinsen', 'explain.interest_year', 'euro'),
+          line('−', 'Abschreibung (AfA)', 'explain.afa_year', 'euro', 'siehe Formel unten'),
+          line('=', 'Steuerliches Ergebnis', 'explain.taxable_year', 'euroSigned'),
+        ], { caption: 'Steuerliches Ergebnis' })}
+        <p class="formula">Steuer = Ergebnis × ${dyn('tax_rate')} Grenzsteuersatz = ${val(m, 'explain.tax_year', 'euroSigned')} im Jahr, also ${val(m, 'explain.tax_month', 'euroSigned')} im Monat. Negativ heißt: Du bekommst so viel Steuer zurück.</p>
+        <p class="formula">AfA = (Kaufpreis + Nebenkosten ${val(m, 'explain.acquisition_costs', 'euro')}) × ${dyn('building_share')} Gebäudeanteil × ${dyn('afa_rate')} AfA-Satz = ${val(m, 'explain.afa_year', 'euro')} pro Jahr</p>
+        <p class="small muted">Nur das Gebäude nutzt sich ab, das Grundstück nicht – darum zählt nur der Gebäudeanteil. Der AfA-Satz hängt vom Baujahr ab: 2,5 % vor 1925, 2 % bis 2022, 3 % ab 2023.</p>
+      </li>
+
+      <li id="rechnung-rendite">
+        <h2>Die Renditen</h2>
+        <dl class="formula-list">
+          <div><dt>Kaufpreisfaktor</dt><dd>Kaufpreis ÷ Jahreskaltmiete = ${val(m, 'yields.factor', 'factor')}<span>Wie viele Jahre die Miete bräuchte, um den Kaufpreis einzuspielen. Bis 20 gilt als günstig, über 27 als teuer.</span></dd></div>
+          <div><dt>Bruttomietrendite</dt><dd>Jahreskaltmiete ÷ Kaufpreis = ${val(m, 'yields.gross_yield', 'pct')}<span>Die einfachste Zahl aus Inseraten – ohne Kosten und Nebenkosten.</span></dd></div>
+          <div><dt>Nettomietrendite</dt><dd>Reinertrag im Jahr ${val(m, 'costs.noi_year', 'euro')} ÷ Gesamtinvestition = ${val(m, 'yields.net_yield', 'pct')}<span>Ehrlicher, weil Kosten und Kaufnebenkosten mitzählen. Ab 3,5 % gut, unter 2,5 % schwach.</span></dd></div>
+          <div><dt>Kapitaldienstdeckung</dt><dd>Reinertrag ÷ Rate im Jahr = ${val(m, 'financing.dscr', 'multiple')}<span>Deckt die Miete die Rate? Unter 1 musst du jeden Monat dazuzahlen.</span></dd></div>
+        </dl>
+      </li>
+
+      <li id="rechnung-irr">
+        <h2>Die Eigenkapitalrendite</h2>
+        <p>Sie fasst alles zusammen: was du anfangs einsetzt, was du jedes Jahr dazuzahlst oder herausbekommst, und was beim Verkauf übrig bleibt. Sie zeigt, wie sich dein eigenes Geld pro Jahr verzinst – vergleichbar mit einem Sparzins.</p>
+        <h3>Was du einsetzt</h3>
+        ${ledger(m, [
+          line('', 'Eigenkapital am Anfang', 'financing.equity', 'euro'),
+          line('', html`Cashflows nach Steuern in ${years} Jahren`, 'explain.sum_cashflows', 'euroSigned', 'Summe aller Jahre: negativ = Zuzahlungen, positiv = Überschüsse'),
+        ], { caption: 'Einsatz' })}
+        <h3>Was beim Verkauf übrig bleibt</h3>
+        ${ledger(m, [
+          line('', html`Wert nach ${years} Jahren`, 'explain.sale_value', 'euro', html`${dyn('value_growth_pct')} Wertsteigerung pro Jahr`),
+          line('−', 'Restschuld bei der Bank', 'explain.sale_debt', 'euro'),
+          line('=', 'Erlös für dich', 'explain.sale_proceeds', 'euro'),
+        ], { caption: 'Verkauf' })}
+        <p class="formula">Eigenkapitalrendite (IRR) = ${val(m, 'returns.irr', 'pct')} pro Jahr</p>
+        <p class="small muted">Die Rechnung sucht den Zinssatz, bei dem Einsatz, laufende Zahlungen und Verkaufserlös genau aufgehen. Verkaufskosten sind nicht eingerechnet; nach 10 Jahren ist der Verkauf steuerfrei.</p>
+      </li>
+    </ol>
+
+    <section class="glossary" aria-labelledby="gloss-title">
+      <h2 id="gloss-title">Begriffe kurz erklärt</h2>
+      <dl>
+        <div><dt>Hausgeld</dt><dd>Monatliche Zahlung an die Eigentümergemeinschaft. Der umlagefähige Teil (Heizung, Wasser, Müll …) wird über die Nebenkosten an den Mieter weitergegeben, der nicht umlagefähige Teil (Verwaltung, Rücklage) bleibt bei dir.</dd></div>
+        <div><dt>Erhaltungsrücklage</dt><dd>Sparkasse der Eigentümergemeinschaft für Dach, Fassade, Heizung. Ist sie zu klein, drohen Sonderumlagen.</dd></div>
+        <div><dt>Grenzsteuersatz</dt><dd>Der Steuersatz auf jeden zusätzlichen Euro deines Einkommens. Danach richtet sich, wie viel Steuer ein Verlust aus der Vermietung spart.</dd></div>
+        <div><dt>Zinsbindung</dt><dd>So lange ist der Zins fest. Danach gibt es einen neuen Zins – die Rechnung nimmt vereinfacht denselben an.</dd></div>
+        <div><dt>Annuität</dt><dd>Gleichbleibende Rate aus Zins und Tilgung.</dd></div>
+        <div><dt>Mietpreisbremse</dt><dd>In vielen Städten darf die Miete bei Neuvermietung höchstens 10 % über der ortsüblichen Vergleichsmiete liegen.</dd></div>
+      </dl>
+    </section>
+
+    <details class="all-numbers">
+      <summary>Alle Zahlen als Liste</summary>
+      ${metricTables(m)}
+    </details>
+    <p class="small muted">Vereinfachte Rechnung. Ersetzt keine Steuer- oder Finanzberatung.</p>
+  </div>`;
 }
 
 // ---------- Vergleich ----------

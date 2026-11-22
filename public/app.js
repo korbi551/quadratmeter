@@ -73,6 +73,14 @@ document.querySelectorAll('table.sortable').forEach((table) => {
 });
 
 // ----- Detailseite -----
+let scenarioActive = false;
+function updateGlobalFlag() {
+  const g = document.querySelector('[data-scenario-flag-global]');
+  const tab = document.querySelector('[data-tabs] [aria-selected="true"]')?.dataset.tab;
+  if (g) g.hidden = !scenarioActive || tab === 'ueberblick';
+}
+document.addEventListener('qm:tab', updateGlobalFlag);
+
 function initDetail({ property, assumptions }) {
   const sliders = [...document.querySelectorAll('[data-scenario]')];
   // Der Browser rundet Startwerte auf die Schrittweite; das gilt nicht als Änderung.
@@ -98,6 +106,8 @@ function initDetail({ property, assumptions }) {
       else a[s.dataset.scenario] = Number(s.value);
     }
     if (flag) flag.hidden = !changed;
+    scenarioActive = changed;
+    updateGlobalFlag();
     return analyze(p, a);
   };
 
@@ -406,7 +416,73 @@ function initForm(form) {
   update();
 }
 
+// ----- Reiter auf der Detailseite -----
+function initTabs() {
+  const nav = document.querySelector('[data-tabs]');
+  if (!nav) return;
+  const tabs = [...nav.querySelectorAll('[data-tab]')];
+  const keys = tabs.map((t) => t.dataset.tab);
+  const current = () => tabs.find((t) => t.getAttribute('aria-selected') === 'true')?.dataset.tab;
+
+  const show = (key, { focus = false, scrollTo = null } = {}) => {
+    if (!keys.includes(key)) return;
+    tabs.forEach((t) => {
+      const on = t.dataset.tab === key;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) t.removeAttribute('tabindex');
+      else t.setAttribute('tabindex', '-1');
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+    const url = new URL(location.href);
+    url.searchParams.set('tab', key);
+    url.hash = scrollTo ? scrollTo : '';
+    history.replaceState(null, '', url);
+    if (focus) nav.querySelector(`[data-tab="${key}"]`).focus();
+    document.dispatchEvent(new CustomEvent('qm:tab', { detail: key }));
+    if (scrollTo) document.getElementById(scrollTo)?.scrollIntoView({ block: 'start' });
+    else if (nav.getBoundingClientRect().top < 0) nav.scrollIntoView({ block: 'start' });
+  };
+
+  nav.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab]');
+    if (!t || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    show(t.dataset.tab);
+  });
+  nav.addEventListener('keydown', (e) => {
+    const i = keys.indexOf(current());
+    let next = null;
+    if (e.key === 'ArrowRight') next = keys[(i + 1) % keys.length];
+    if (e.key === 'ArrowLeft') next = keys[(i - 1 + keys.length) % keys.length];
+    if (e.key === 'Home') next = keys[0];
+    if (e.key === 'End') next = keys[keys.length - 1];
+    if (next) {
+      e.preventDefault();
+      show(next, { focus: true });
+    }
+  });
+
+  // Links wie "Wie gerechnet?" springen in den passenden Reiter
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-goto], [data-goto-tab]');
+    if (!link || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    if (link.dataset.gotoTab) return show(link.dataset.gotoTab);
+    const target = document.getElementById(link.dataset.goto);
+    const panel = target?.closest('[role="tabpanel"]');
+    if (panel) show(panel.id.replace('tab-', ''), { scrollTo: link.dataset.goto });
+  });
+
+  // Direktlink mit Anker, z. B. #rechnung-cashflow
+  if (location.hash) {
+    const target = document.getElementById(location.hash.slice(1));
+    const panel = target?.closest('[role="tabpanel"]');
+    if (panel && panel.hidden) show(panel.id.replace('tab-', ''), { scrollTo: target.id });
+  }
+}
+
 // Start (am Ende, damit alle Konstanten oben schon definiert sind)
+initTabs();
 const dataEl = document.getElementById('qm-data');
 if (dataEl) initDetail(JSON.parse(dataEl.textContent));
 const propertyFormEl = document.querySelector('[data-property-form]');

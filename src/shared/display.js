@@ -20,10 +20,10 @@ export const FORMATS = {
 export const formatValue = (format, v) => (FORMATS[format] || String)(v);
 
 export const HEADLINE_METRICS = [
-  { key: 'cashflow.after_tax_month', label: 'Cashflow nach Steuern', note: 'pro Monat im 1. Jahr', format: 'euroSigned', signal: 'cashflow' },
-  { key: 'yields.net_yield', label: 'Nettomietrendite', note: 'Reinertrag ÷ Gesamtinvestition', format: 'pct', signal: 'net_yield' },
-  { key: 'yields.factor', label: 'Kaufpreisfaktor', note: 'Kaufpreis ÷ Jahreskaltmiete', format: 'factor', signal: 'factor' },
-  { key: 'returns.irr', label: 'Eigenkapitalrendite', note: 'IRR inkl. Verkauf nach Haltedauer', format: 'pct' },
+  { key: 'cashflow.after_tax_month', label: 'Cashflow nach Steuern', note: 'Bleibt pro Monat übrig. Negativ heißt: du zahlst drauf.', format: 'euroSigned', signal: 'cashflow', explain: 'rechnung-cashflow' },
+  { key: 'yields.net_yield', label: 'Nettomietrendite', note: 'Miete nach Kosten im Verhältnis zum eingesetzten Geld.', format: 'pct', signal: 'net_yield', explain: 'rechnung-rendite' },
+  { key: 'yields.factor', label: 'Kaufpreisfaktor', note: 'So viele Jahresmieten kostet die Wohnung.', format: 'factor', signal: 'factor', explain: 'rechnung-rendite' },
+  { key: 'returns.irr', label: 'Eigenkapitalrendite', note: 'Jährliche Verzinsung deines Eigenkapitals inklusive Verkauf.', format: 'pct', explain: 'rechnung-irr' },
 ];
 
 export const METRIC_GROUPS = [
@@ -95,3 +95,4 @@ export const METRIC_GROUPS = [
 ];
 
 FORMATS.euro2 = (v) => fmt.euro(v, 2);
+FORMATS.euroSigned2 = (v) => (typeof v === 'number' ? `${v > 0 ? '+' : ''}${fmt.euro(v, 2)}` : '–');
