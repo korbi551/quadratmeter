@@ -92,3 +92,14 @@ test('Rechenweg geht auf (Erklärung = Rechnung)', () => {
   near(m.purchase.total_investment - m.financing.equity, m.financing.loan, 'Darlehen');
   near(e.sale_value - e.sale_debt, e.sale_proceeds, 'Verkaufserlös');
 });
+
+test('Belastung auf dem Konto ohne Reserven', () => {
+  const a = { tax_rate: 42, equity: 40000 };
+  const m = analyze(flat, a);
+  // Direkt gerechnet: ohne Mietausfall und eigene Instandhaltung
+  const direct = analyze(flat, { ...a, vacancy_pct: 0, own_maintenance_per_sqm: 0 }, { breakEven: false });
+  assert.ok(Math.abs(m.cashflow.account_month - direct.cashflow.after_tax_month) < 0.02, `${m.cashflow.account_month} ≠ ${direct.cashflow.after_tax_month}`);
+  assert.ok(m.cashflow.account_month > m.cashflow.after_tax_month);
+  const e = m.explain;
+  assert.ok(Math.abs(e.cf_after_month + e.reserves_month - e.reserves_tax_month - e.account_month) < 0.05);
+});

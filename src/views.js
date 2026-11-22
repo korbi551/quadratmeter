@@ -311,6 +311,7 @@ function headline(m) {
         <span class="figure-value" data-metric="${h.key}" data-format="${h.format}">${formatValue(h.format, v)}</span>
         <span class="figure-signal" data-signal="${h.signal || ''}">${lvl ? levelDot(lvl) : ''}</span>
         <span class="figure-note">${h.note}${h.key === 'returns.irr' ? html` Verkauf nach <span data-metric="returns.holding_years" data-format="plain">${m.returns.holding_years}</span>&nbsp;Jahren.` : ''}</span>
+        ${h.key === 'cashflow.after_tax_month' && m.income.annual_rent ? html`<span class="figure-sub">Auf dem Konto: <b data-metric="cashflow.account_month" data-format="euroSigned">${formatValue('euroSigned', m.cashflow.account_month)}</b> im Monat<span class="figure-sub-note">ohne Rücklage für Leerstand und Reparaturen</span></span>` : ''}
         <a class="figure-link" href="?tab=rechnung#${h.explain}" data-goto="${h.explain}">Wie gerechnet?</a>
       </div>`;
     })}
@@ -657,6 +658,15 @@ function explainSection(p, m) {
           line('=', 'Cashflow nach Steuern', 'explain.cf_after_month', 'euroSigned2'),
         ], { caption: 'Monatlicher Cashflow' })}
         <p class="small muted">Die Tilgung ist ein Kostenpunkt im Geldbeutel, aber kein Verlust: Sie senkt deine Schulden. Darum kann ein negativer Cashflow trotzdem Vermögen aufbauen.</p>
+        <h3 id="rechnung-konto">Und was geht wirklich vom Konto?</h3>
+        <p>Mietausfall und eigene Instandhaltung sind Reserven: Sie fallen nicht jeden Monat an, sondern unregelmäßig – ein leerer Monat beim Mieterwechsel, eine neue Therme nach Jahren. In einem normalen Monat ist die Belastung deshalb etwas kleiner. Ohne diese Abzüge ist die Miete steuerlich höher, ein Teil geht also an die Steuer.</p>
+        ${ledger(m, [
+          line('', 'Cashflow nach Steuern', 'explain.cf_after_month', 'euroSigned2'),
+          line('+', 'Reserven für Mietausfall und Instandhaltung', 'explain.reserves_month', 'euro2', 'werden nicht jeden Monat ausgegeben'),
+          line('−', 'Steuer auf diesen Betrag', 'explain.reserves_tax_month', 'euro2', html`${dyn('tax_rate')} Grenzsteuersatz`),
+          line('=', 'Belastung auf dem Konto', 'explain.account_month', 'euroSigned2'),
+        ], { caption: 'Belastung auf dem Konto' })}
+        <p class="small muted">Plane die Reserven trotzdem ein: Leg das Geld zurück, statt es auszugeben. Die Hausgeld-Rücklage der Eigentümergemeinschaft bleibt in beiden Werten drin, weil sie jeden Monat wirklich bezahlt wird.</p>
       </li>
 
       <li id="rechnung-steuer">
@@ -744,6 +754,7 @@ export function compare(ctx, { items }) {
     ['Eigenkapital', (x) => fmt.euro(x.m.financing.equity)],
     ['Rate pro Monat', (x) => fmt.euro(x.m.financing.rate_month)],
     ['Cashflow nach Steuern pro Monat', (x) => levelDot(signalFor(x.m, 'cashflow'), fmt.euroSigned(x.m.cashflow.after_tax_month))],
+    ['Belastung auf dem Konto pro Monat', (x) => fmt.euroSigned(x.m.cashflow.account_month)],
     ['EK-Rendite (IRR)', (x) => fmt.pct(x.m.returns.irr)],
     ['Standort', (x) => (x.a?.location?.overall?.score ? `${fmt.num(x.a.location.overall.score)} / 10` : '–')],
     ['Rote Risiken', (x) => (x.a?.risks || []).filter((r) => r.level === 'red').map((r) => r.category).join(', ') || '–'],
@@ -946,6 +957,7 @@ const PREVIEW_ROWS = [
   { key: 'financing.rate_month', label: 'Rate pro Monat', format: 'euro' },
   { key: 'cashflow.before_tax_month', label: 'Cashflow vor Steuern pro Monat', format: 'euroSigned' },
   { key: 'cashflow.after_tax_month', label: 'Cashflow nach Steuern pro Monat', format: 'euroSigned', strong: true, signal: 'cashflow' },
+  { key: 'cashflow.account_month', label: 'Auf dem Konto pro Monat (ohne Reserven)', format: 'euroSigned' },
   { key: 'returns.irr', label: 'Eigenkapitalrendite (IRR)', format: 'pct' },
   { key: 'break_even_price', label: 'Cashflow-neutral bei Kaufpreis', format: 'euro' },
 ];

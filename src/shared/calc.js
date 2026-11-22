@@ -294,6 +294,10 @@ export function analyze(property = {}, assumptions = {}, { breakEven = true } = 
       after_tax_month: round(y1.cashflow_after_tax / 12),
       before_tax_year: y1.cashflow_before_tax,
       after_tax_year: y1.cashflow_after_tax,
+      // Was in einem normalen Monat tatsächlich vom Konto geht: ohne Reserve für Mietausfall und eigene Instandhaltung.
+      // Ohne diese Abzüge ist das steuerliche Ergebnis höher, die Steuer wird mitgerechnet.
+      account_month: round((y1.cashflow_after_tax + (vacancy + ownMaintenance) * (1 - taxRate)) / 12),
+      account_year: round(y1.cashflow_after_tax + (vacancy + ownMaintenance) * (1 - taxRate)),
     },
     returns: {
       cash_on_cash: equity ? round(y1.cashflow_after_tax / equity, 4) : null,
@@ -331,6 +335,9 @@ export function analyze(property = {}, assumptions = {}, { breakEven = true } = 
     tax_year: y1.tax,
     tax_month: round(y1.tax / 12),
     tax_saving_month: round(-y1.tax / 12),
+    reserves_month: round((vacancy + ownMaintenance) / 12),
+    reserves_tax_month: round(((vacancy + ownMaintenance) * taxRate) / 12),
+    account_month: round((y1.cashflow_after_tax + (vacancy + ownMaintenance) * (1 - taxRate)) / 12),
     cf_after_month: round(y1.cashflow_after_tax / 12),
     acquisition_costs: round(basePrice + ancillary),
     sum_cashflows: round(projection.slice(0, holding).reduce((s, r) => s + r.cashflow_after_tax, 0)),

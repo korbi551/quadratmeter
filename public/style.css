@@ -461,3 +461,6 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 0.8; }
 @media (max-width: 720px) {
   .tabs { -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); mask-image: linear-gradient(to right, #000 85%, transparent); }
 }
+.figure-sub { font-size: 0.85rem; color: var(--ink-2); margin-top: 0.35rem; }
+.figure-sub b { color: var(--ink); font-weight: 650; }
+.figure-sub-note { display: block; font-size: 0.75rem; color: var(--ink-3); }

@@ -320,6 +320,7 @@ export function createTools({ store, config }) {
           gross_yield: m.yields.gross_yield,
           net_yield: m.yields.net_yield,
           cashflow_after_tax_month: m.cashflow.after_tax_month,
+          account_month_without_reserves: m.cashflow.account_month,
           irr: m.returns.irr,
           break_even_price: m.break_even_price,
         },

@@ -90,6 +90,7 @@ export const METRIC_GROUPS = [
       { key: 'tax.tax_year1', label: 'Steuer (negativ = Erstattung)', format: 'euroSigned' },
       { key: 'cashflow.before_tax_month', label: 'Cashflow vor Steuern pro Monat', format: 'euroSigned' },
       { key: 'cashflow.after_tax_month', label: 'Cashflow nach Steuern pro Monat', format: 'euroSigned', strong: true },
+      { key: 'cashflow.account_month', label: 'Belastung auf dem Konto pro Monat (ohne Reserven)', format: 'euroSigned' },
     ],
   },
 ];
