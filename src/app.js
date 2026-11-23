@@ -19,6 +19,15 @@ const STATIC = {
   '/static/style.css': [path.join(here, '..', 'public', 'style.css'), 'text/css; charset=utf-8'],
   '/static/app.js': [path.join(here, '..', 'public', 'app.js'), 'text/javascript; charset=utf-8'],
   '/static/favicon.svg': [path.join(here, '..', 'public', 'favicon.svg'), 'image/svg+xml'],
+  '/static/icons/icon-192.png': [path.join(here, '..', 'public', 'icons', 'icon-192.png'), 'image/png'],
+  '/static/icons/icon-512.png': [path.join(here, '..', 'public', 'icons', 'icon-512.png'), 'image/png'],
+  '/static/icons/icon-maskable-512.png': [path.join(here, '..', 'public', 'icons', 'icon-maskable-512.png'), 'image/png'],
+  '/static/icons/apple-touch-icon.png': [path.join(here, '..', 'public', 'icons', 'apple-touch-icon.png'), 'image/png'],
+  '/apple-touch-icon.png': [path.join(here, '..', 'public', 'icons', 'apple-touch-icon.png'), 'image/png'],
+  '/apple-touch-icon-precomposed.png': [path.join(here, '..', 'public', 'icons', 'apple-touch-icon.png'), 'image/png'],
+  '/favicon.ico': [path.join(here, '..', 'public', 'icons', 'icon-192.png'), 'image/png'],
+  '/manifest.webmanifest': [path.join(here, '..', 'public', 'manifest.webmanifest'), 'application/manifest+json; charset=utf-8'],
+  '/offline.html': [path.join(here, '..', 'public', 'offline.html'), 'text/html; charset=utf-8'],
   '/static/shared/calc.js': [path.join(here, 'shared', 'calc.js'), 'text/javascript; charset=utf-8'],
   '/static/shared/fields.js': [path.join(here, 'shared', 'fields.js'), 'text/javascript; charset=utf-8'],
   '/static/shared/display.js': [path.join(here, 'shared', 'display.js'), 'text/javascript; charset=utf-8'],
@@ -406,6 +415,11 @@ export function createApp(config) {
       if (req.method === 'OPTIONS' && isCors) return send(res, 204, '');
 
       if (pathname === '/mcp') return await mcp(req, res);
+
+      if (pathname === '/sw.js' && (req.method === 'GET' || req.method === 'HEAD')) {
+        const sw = fs.readFileSync(path.join(here, '..', 'public', 'sw.js'), 'utf8').replaceAll('__VERSION__', VERSION);
+        return send(res, 200, sw, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' });
+      }
 
       const asset = STATIC[pathname];
       if (asset && (req.method === 'GET' || req.method === 'HEAD')) {

@@ -428,3 +428,20 @@ test('Schnellcheck mit eigenen Zielen', async () => {
   const list = await req('/wohnungen', { cookie });
   assert.match(list.text, /Miete − Bank/);
 });
+
+test('Installierbare Web-App: Manifest, Service Worker, Icons', async () => {
+  const manifest = await req('/manifest.webmanifest');
+  assert.equal(manifest.status, 200);
+  assert.match(manifest.headers.get('content-type'), /manifest\+json/);
+  assert.equal(manifest.data.display, 'standalone');
+  for (const icon of manifest.data.icons) assert.equal((await req(icon.src)).status, 200, icon.src);
+  const sw = await req('/sw.js');
+  assert.equal(sw.status, 200);
+  assert.equal(sw.headers.get('service-worker-allowed'), '/');
+  assert.doesNotMatch(sw.text, /__VERSION__/);
+  assert.equal((await req('/offline.html')).status, 200);
+  assert.equal((await req('/apple-touch-icon.png')).status, 200);
+  const login = await req('/login');
+  assert.match(login.text, /rel="manifest"/);
+  assert.match(login.text, /apple-touch-icon/);
+});

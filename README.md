@@ -52,6 +52,15 @@ Jeder Nutzer macht das einmal in seinem eigenen Claude-Konto:
 
 Verbindungen lassen sich unter **Konto** trennen. Wird ein Nutzer gesperrt, endet sein Claude-Zugriff sofort.
 
+## Als App installieren
+
+Quadratmeter ist eine installierbare Web-App. Auf dem Handy oder Computer die Adresse öffnen und dann:
+
+- **Android / Chrome / Edge:** im Browser-Menü „App installieren“ wählen (oder der Knopf „Als App installieren“ in der Übersicht).
+- **iPhone / iPad:** in Safari auf „Teilen“ tippen und „Zum Home-Bildschirm“ wählen.
+
+Die App braucht Internet, weil die Wohnungen auf dem Server liegen. Ohne Verbindung erscheint ein Hinweis. Deine Daten werden absichtlich nicht auf dem Gerät gespeichert. Für die Installation muss die App über https erreichbar sein (bei Coolify automatisch mit der Domain).
+
 ## Lokal starten
 
 ```bash

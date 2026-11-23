@@ -496,3 +496,22 @@ input::placeholder, textarea::placeholder { color: var(--ink-3); opacity: 0.8; }
   .goals li { grid-template-columns: 1fr; gap: 0.1rem; }
   .quick-calc > div b { font-size: 1.1rem; }
 }
+
+/* ---------- Als App (Startbildschirm) ---------- */
+.install { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+.install h2 { margin-bottom: 0.35rem; }
+.install p:last-child { margin-bottom: 0; }
+.topbar {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-left: max(clamp(1rem, 4vw, 2.5rem), env(safe-area-inset-left));
+  padding-right: max(clamp(1rem, 4vw, 2.5rem), env(safe-area-inset-right));
+}
+.page {
+  padding-left: max(clamp(1rem, 4vw, 2.5rem), env(safe-area-inset-left));
+  padding-right: max(clamp(1rem, 4vw, 2.5rem), env(safe-area-inset-right));
+  padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom)));
+}
+@media (display-mode: standalone) {
+  .topbar { position: sticky; top: 0; z-index: 10; }
+  .pv-bar { top: calc(3.5rem + env(safe-area-inset-top)); }
+}

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 // HTML-Seiten (serverseitig gerendert, mit automatischem Escaping).
 import { fmt } from './shared/calc.js';
 import {
@@ -6,7 +7,7 @@ import {
 } from './shared/fields.js';
 import { METRIC_GROUPS, HEADLINE_METRICS, get, formatValue } from './shared/display.js';
 
-const VERSION = '0.1.0';
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 class Safe {
   constructor(s) { this.s = s; }
@@ -52,7 +53,16 @@ export function layout(ctx, { title, body, active = '' }) {
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#182129" media="(prefers-color-scheme: dark)">
+<meta name="application-name" content="Quadratmeter">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Quadratmeter">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <title>${title ? `${title} – Quadratmeter` : 'Quadratmeter'}</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css?v=${VERSION}">
@@ -263,7 +273,8 @@ export function overview(ctx, { rows, shared = [], status, mcpUrl }) {
     title: 'Wohnungen',
     active: 'wohnungen',
     body: html`<div class="page-head">
-        <div class="page-title"><h1>Wohnungen</h1><a class="button" href="/wohnungen/neu">Neue Wohnung</a></div>
+        <div class="page-title"><h1>Wohnungen</h1><a class="button" href="/wohnungen/neu">Neue Wohnung</a>
+          <button type="button" class="secondary" data-install-button hidden>Als App installieren</button></div>
         ${rows.length ? html`<nav class="filters" aria-label="Nach Status filtern">
           <a href="/wohnungen" ${!status ? raw('aria-current="true"') : ''}>Alle <span>${rows.length}</span></a>
           ${STATUSES.filter((s) => counts[s.key]).map((s) => html`<a href="/wohnungen?status=${s.key}" ${status === s.key ? raw('aria-current="true"') : ''}>${s.label} <span>${counts[s.key]}</span></a>`)}
@@ -800,6 +811,14 @@ export function account(ctx, { grants, mcpUrl, notice, error, defaults = {} }) {
     body: html`<h1>Konto</h1>
     ${notice ? html`<p class="success" role="status">${notice}</p>` : ''}
     ${error ? html`<p class="alert" role="alert">${error}</p>` : ''}
+    <section class="install" aria-labelledby="install-title">
+      <h2 id="install-title">Quadratmeter als App</h2>
+      <p>Leg Quadratmeter auf den Startbildschirm. Dann öffnet es sich wie eine App, ohne Adressleiste.</p>
+      <p data-install-state="prompt" hidden><button type="button" data-install-button>App installieren</button></p>
+      <p data-install-state="ios" hidden class="small">Auf dem iPhone oder iPad: In Safari unten auf <strong>Teilen</strong> tippen und <strong>Zum Home-Bildschirm</strong> wählen.</p>
+      <p data-install-state="other" class="small">Im Browser-Menü <strong>App installieren</strong> oder <strong>Zum Startbildschirm hinzufügen</strong> wählen.</p>
+      <p data-install-state="installed" hidden class="small">Du nutzt Quadratmeter gerade als App.</p>
+    </section>
     ${defaultsSection(ctx, Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, toInputValue(v)])))}
     <div class="two-col">
       <section>

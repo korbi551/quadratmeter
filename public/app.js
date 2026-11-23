@@ -504,6 +504,41 @@ function initTabs() {
   }
 }
 
+// ----- Installierbare App -----
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+function initInstall() {
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const showOnly = (attr) => {
+    document.querySelectorAll('[data-install-state]').forEach((el) => (el.hidden = el.dataset.installState !== attr));
+  };
+  if (standalone) return showOnly('installed');
+  showOnly(ios ? 'ios' : 'other');
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    showOnly('prompt');
+    document.querySelectorAll('[data-install-button]').forEach((b) => (b.hidden = false));
+  });
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-install-button]');
+    if (!btn || !deferred) return;
+    deferred.prompt();
+    const { outcome } = await deferred.userChoice;
+    deferred = null;
+    document.querySelectorAll('[data-install-button]').forEach((b) => (b.hidden = true));
+    if (outcome === 'accepted') showOnly('installed');
+  });
+  window.addEventListener('appinstalled', () => {
+    document.querySelectorAll('[data-install-button]').forEach((b) => (b.hidden = true));
+    showOnly('installed');
+  });
+}
+initInstall();
+
 // Start (am Ende, damit alle Konstanten oben schon definiert sind)
 initTabs();
 const dataEl = document.getElementById('qm-data');

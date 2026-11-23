@@ -1,6 +1,6 @@
 {
   "name": "quadratmeter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Wohnungen als Kapitalanlage analysieren – mit Claude über MCP.",
   "private": true,
   "type": "module",
