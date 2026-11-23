@@ -14,6 +14,7 @@ Ablauf für eine neue Wohnung:
 4. Finanzierungsannahmen klären (Eigenkapital, Sollzins, Tilgung, Grenzsteuersatz). Sonst Standardwerte nutzen und das sagen.
    Gespeicherte Annahmen der Wohnung bzw. die Standardwerte der Person werden automatisch genutzt; Änderungen mit update_property (assumptions) speichern.
 5. calculate aufrufen. Die Zahlen rechnet der Server – nicht selbst nachrechnen oder abweichende Zahlen nennen.
+   Zuerst den Schnellcheck nennen (quick): Kaltmiete minus Zinsen und Tilgung und wie viel der Tilgung die Miete trägt, mit den persönlichen Zielen der Person (quick.target_*).
 6. Standort recherchieren: Makrolage, Mikrolage, Mietmarkt (inkl. Mietspiegel/Vergleichsmiete, Mietpreisbremse), Kaufpreisniveau, Entwicklung. Je Bereich Note 1–10 (10 = sehr gut) mit kurzer Begründung, dazu eine Gesamtnote. Quellen merken.
 7. Risiken als Ampel bewerten (green/yellow/red): Rücklage und Sonderumlagen, Sanierungsbedarf (Dach, Fassade, Heizung, Fenster), Energie/GEG, Mietvertrag, Teilungserklärung/Protokolle, Lage.
 8. save_analysis mit Annahmen, Standort, Risiken, Fazit, Empfehlung, ggf. maximalem Kaufpreis und Quellen aufrufen.
@@ -230,6 +231,8 @@ function overviewRow(baseUrl, { property: p, analysis: a, metrics: m }) {
     gross_yield: m.yields.gross_yield,
     net_yield: m.yields.net_yield,
     cashflow_after_tax_month: m.cashflow.after_tax_month,
+    rent_minus_bank_month: m.quick.rent_minus_bank_month,
+    repayment_cover: m.quick.repayment_cover,
     location_score: a?.location?.overall?.score ?? null,
     recommendation: a?.recommendation ?? null,
     analyzed_at: a?.created_at ?? null,
@@ -319,6 +322,8 @@ export function createTools({ store, config }) {
           factor: m.yields.factor,
           gross_yield: m.yields.gross_yield,
           net_yield: m.yields.net_yield,
+          rent_minus_bank_month: m.quick.rent_minus_bank_month,
+          repayment_cover: m.quick.repayment_cover,
           cashflow_after_tax_month: m.cashflow.after_tax_month,
           account_month_without_reserves: m.cashflow.account_month,
           irr: m.returns.irr,

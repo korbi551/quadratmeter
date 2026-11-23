@@ -124,6 +124,7 @@ function initDetail({ property, assumptions }) {
       const s = m.signals.find((x) => x.key === el.dataset.signal);
       el.innerHTML = s ? signalHtml(s.level) : '';
     });
+    updateGoals(document, m);
     const list = document.querySelector('[data-signals]');
     if (list) {
       list.innerHTML = m.signals.map((s) =>
@@ -166,6 +167,27 @@ function initDetail({ property, assumptions }) {
 }
 
 const LEVEL = { green: 'Grün', yellow: 'Gelb', red: 'Rot' };
+const GOAL = {
+  'quick.gap_level': { green: 'Ziel erreicht', yellow: 'knapp verfehlt', red: 'verfehlt' },
+  'quick.cover_level': { green: 'Ziel erreicht', yellow: 'nicht erreicht', red: 'Zinsen nicht gedeckt' },
+};
+const VERDICT = { green: 'Beide Ziele erreicht', yellow: 'Ein Ziel verfehlt', red: 'Beide Ziele verfehlt' };
+const goalHtml = (lvl, key) => `<span class="signal signal-${lvl}"><span class="dot" aria-hidden="true"></span>${(GOAL[key] || GOAL['quick.gap_level'])[lvl]}</span>`;
+
+// Ampeln und Gesamturteil des Schnellchecks aktualisieren
+function updateGoals(root, m) {
+  const active = m.quick.rent_month && m.financing.loan;
+  root.querySelectorAll('[data-goal]').forEach((el) => {
+    const lvl = get(m, el.dataset.goal);
+    el.innerHTML = active && lvl ? goalHtml(lvl, el.dataset.goal) : '';
+  });
+  root.querySelectorAll('[data-quick]').forEach((el) => {
+    el.classList.remove('quick-green', 'quick-yellow', 'quick-red');
+    el.classList.add(`quick-${m.quick.verdict}`);
+    const v = el.querySelector('[data-quick-verdict]');
+    if (v) v.textContent = VERDICT[m.quick.verdict];
+  });
+}
 const signalHtml = (lvl) => `<span class="signal signal-${lvl}"><span class="dot" aria-hidden="true"></span>${LEVEL[lvl]}</span>`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -404,6 +426,7 @@ function initForm(form) {
       const s = m.signals.find((x) => x.key === el.dataset.signal);
       el.innerHTML = s ? signalHtml(s.level) : '';
     });
+    updateGoals(form, m);
     const warn = form.querySelector('[data-preview-warnings]');
     if (warn) warn.innerHTML = m.warnings.map((w) => `<li>${esc(w)}</li>`).join('');
   };

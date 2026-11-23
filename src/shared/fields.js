@@ -91,7 +91,7 @@ export const PROPERTY_FIELD_MAP = Object.fromEntries(PROPERTY_FIELDS.map((f) => 
 // Annahmen für Finanzierung, Steuer und Prognose.
 export const ASSUMPTION_FIELDS = [
   { key: 'equity', label: 'Eigenkapital', unit: '€', default: null, description: 'Eingesetztes Eigenkapital. Leer = Kaufnebenkosten werden aus Eigenkapital bezahlt, Kaufpreis finanziert.' },
-  { key: 'interest_rate', label: 'Sollzins', unit: '% p. a.', default: 3.8, min: 0, max: 8, step: 0.05 },
+  { key: 'interest_rate', label: 'Sollzins', unit: '% p. a.', default: 4.2, min: 0, max: 8, step: 0.05 },
   { key: 'repayment_rate', label: 'Anfängliche Tilgung', unit: '% p. a.', default: 2, min: 0, max: 6, step: 0.1 },
   { key: 'fixed_years', label: 'Zinsbindung', unit: 'Jahre', default: 10, min: 5, max: 30, step: 1 },
   { key: 'tax_rate', label: 'Grenzsteuersatz', unit: '%', default: 35, min: 0, max: 50, step: 1, description: 'Persönlicher Grenzsteuersatz inkl. Soli/Kirchensteuer' },
@@ -108,7 +108,12 @@ export const ASSUMPTION_FIELDS = [
   { key: 'cost_growth_pct', label: 'Kostensteigerung', unit: '% p. a.', default: 2, min: 0, max: 5, step: 0.1 },
   { key: 'value_growth_pct', label: 'Wertsteigerung', unit: '% p. a.', default: 1.5, min: -3, max: 5, step: 0.1 },
   { key: 'holding_years', label: 'Haltedauer', unit: 'Jahre', default: 10, min: 1, max: 30, step: 1, description: 'Für die Eigenkapitalrendite mit Verkauf (IRR)' },
+  { key: 'target_rent_minus_bank', label: 'Ziel: Miete minus Bank', unit: '€/Monat', default: -100, description: 'Kaltmiete minus Zinsen und Tilgung soll mindestens diesen Wert erreichen (z. B. -100)' },
+  { key: 'target_repayment_cover_pct', label: 'Ziel: Tilgung aus der Miete', unit: '%', default: 50, description: 'So viel der Tilgung soll die Miete nach den Zinsen mindestens bezahlen' },
 ];
+
+// Ziele für den Schnellcheck (persönliche Faustregeln)
+export const GOAL_ASSUMPTIONS = ['target_rent_minus_bank', 'target_repayment_cover_pct'];
 
 export const ASSUMPTION_FIELD_MAP = Object.fromEntries(ASSUMPTION_FIELDS.map((f) => [f.key, f]));
 

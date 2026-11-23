@@ -13,6 +13,7 @@ Eigene API-Keys brauchst du nicht: Claude verbindet sich per OAuth, und jeder Nu
 - **Rechner** (`src/shared/calc.js`): Kaufnebenkosten je Bundesland, Brutto- und Nettomietrendite, Kaufpreisfaktor, Annuitätendarlehen, Cashflow vor und nach Steuern (AfA nach Baujahr, Grenzsteuersatz), 30-Jahres-Prognose, Eigenkapitalrendite (IRR) mit Verkauf, cashflow-neutraler Kaufpreis und Ampel-Faustregeln. Derselbe Code läuft im Server und im Browser.
 - **MCP-Server** unter `/mcp` mit den Tools `list_properties`, `get_property`, `create_property`, `update_property`, `calculate`, `save_analysis`, `add_note` und `compare_properties`.
 - **OAuth 2.1** mit dynamischer Client-Registrierung und PKCE, so wie Claude es für eigene Connectors erwartet.
+- **Schnellcheck „Miete minus Bank“**: Kaltmiete minus Zinsen und Tilgung und wie viel der Tilgung die Miete trägt, mit persönlichen Zielen (Standard: ab −100 € im Monat, mindestens 50 % der Tilgung) – ganz oben auf der Detailseite, in der Liste, im Formular und im Vergleich. Die Ziele stellt jeder unter Konto ein.
 - **Detailseite in Reitern**: Überblick (mit Szenario-Reglern), Rechnung (Rechenweg Schritt für Schritt mit den Zahlen der Wohnung und Begriffserklärungen), Prognose, Standort & Risiken, Notizen & Daten.
 - **Web-App**: Wohnungen im Formular anlegen und bearbeiten (mit Kennzahlen beim Tippen), eigene Standardwerte für Finanzierung und Steuer, Übersicht mit Sortierung und Statusfilter, Detailseite, Vergleich von bis zu sechs Wohnungen, Notizen, Konto mit verbundenen Apps.
 - **Nutzer und Rollen**: Admins laden Nutzer per Link ein, setzen Passwörter zurück, sperren oder löschen Nutzer. Jeder sieht nur seine eigenen Wohnungen.
@@ -64,7 +65,7 @@ Für einen lokalen Test mit Claude muss der Server per https aus dem Internet er
 ## Hinweise zur Rechnung
 
 - Grunderwerbsteuersätze Stand November 2026, pro Analyse überschreibbar.
-- Standardannahmen: Nebenkosten aus Eigenkapital, Kaufpreis finanziert, 3,8 % Sollzins, 2 % Tilgung, 35 % Grenzsteuersatz, 75 % Gebäudeanteil, 5 €/m² eigene Instandhaltung, 2 % Mietausfall. Claude soll die Finanzierungsdaten erfragen.
+- Standardannahmen: Nebenkosten aus Eigenkapital, Kaufpreis finanziert, 4,2 % Sollzins, 2 % Tilgung, 35 % Grenzsteuersatz, 75 % Gebäudeanteil, 5 €/m² eigene Instandhaltung, 2 % Mietausfall. Claude soll die Finanzierungsdaten erfragen.
 - Vereinfachungen: gleicher Zins nach der Zinsbindung, Rücklagenzuführung erst bei Verwendung absetzbar und darum in der Steuer nicht abgezogen, Verkauf ohne Verkaufskosten und steuerfrei.
 - Die Analyse ersetzt keine Steuer-, Rechts- oder Finanzberatung.
 

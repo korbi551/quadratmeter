@@ -346,6 +346,31 @@ export function analyze(property = {}, assumptions = {}, { breakEven = true } = 
     sale_proceeds: round(sale.value - sale.remaining_debt),
   };
 
+  // Schnellcheck: Kaltmiete minus Bank (Zinsen + Tilgung), ohne Hausgeld und Steuer
+  const qInterest = y1.interest / 12;
+  const qPrincipal = y1.principal / 12;
+  const rentMinusBank = rentMonth - qInterest - qPrincipal;
+  const cover = qPrincipal > 0 ? (rentMonth - qInterest) / qPrincipal : null;
+  const targetGap = A.target_rent_minus_bank;
+  const targetCover = A.target_repayment_cover_pct / 100;
+  const meetsGap = rentMinusBank >= targetGap - 0.005;
+  const meetsCover = cover === null || cover >= targetCover - 0.00005;
+  result.quick = {
+    rent_month: round(rentMonth),
+    interest_month: round(qInterest),
+    principal_month: round(qPrincipal),
+    bank_month: round(qInterest + qPrincipal),
+    rent_minus_bank_month: round(rentMinusBank),
+    repayment_cover: cover === null ? null : round(cover, 4),
+    target_rent_minus_bank: targetGap,
+    target_repayment_cover: targetCover,
+    meets_gap: meetsGap,
+    meets_cover: meetsCover,
+    gap_level: level(rentMinusBank, (v) => v >= targetGap - 0.005, (v) => v >= targetGap - 100),
+    cover_level: cover === null ? 'green' : level(cover, (v) => v >= targetCover - 0.00005, (v) => v >= 0),
+    verdict: meetsGap && meetsCover ? 'green' : meetsGap || meetsCover ? 'yellow' : 'red',
+  };
+
   result.break_even_price = breakEven && price ? breakEvenPrice(p, assumptions) : null;
   result.signals = signals(result, p);
   return result;
@@ -371,6 +396,17 @@ function signals(r, p) {
   const out = [];
   const add = (key, label, lvl, text) => lvl && out.push({ key, label, level: lvl, text });
   const pct = (v) => `${(v * 100).toFixed(1).replace('.', ',')} %`;
+  const eur = (v) => `${Math.round(v).toLocaleString('de-DE').replace('-', '−')} €`;
+
+  const q = r.quick;
+  if (q && q.rent_month && r.financing.loan > 0) {
+    add('rent_minus_bank', 'Miete minus Bank', q.gap_level,
+      `${eur(q.rent_minus_bank_month)} im Monat (dein Ziel: ab ${eur(q.target_rent_minus_bank)})`);
+    if (q.repayment_cover !== null) {
+      add('repayment_cover', 'Tilgung aus der Miete', q.cover_level,
+        `Die Miete zahlt nach den Zinsen ${pct(Math.max(0, q.repayment_cover))} der Tilgung (dein Ziel: mindestens ${pct(q.target_repayment_cover)})`);
+    }
+  }
 
   const f = r.yields.factor;
   add('factor', 'Kaufpreisfaktor', level(f, (v) => v <= 20, (v) => v <= 27),

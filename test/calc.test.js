@@ -37,7 +37,7 @@ test('Finanzierung: Standard = Nebenkosten aus Eigenkapital', () => {
   const m = analyze(flat);
   assert.equal(m.financing.equity, 30175);
   assert.equal(m.financing.loan, 250000);
-  assert.equal(m.financing.rate_month, 1208.33); // (3,8 % + 2 %) / 12
+  assert.equal(m.financing.rate_month, 1291.67); // (4,2 % + 2 %) / 12
   assert.ok(m.financing.payoff_years > 25 && m.financing.payoff_years < 32);
 });
 
@@ -102,4 +102,21 @@ test('Belastung auf dem Konto ohne Reserven', () => {
   assert.ok(m.cashflow.account_month > m.cashflow.after_tax_month);
   const e = m.explain;
   assert.ok(Math.abs(e.cf_after_month + e.reserves_month - e.reserves_tax_month - e.account_month) < 0.05);
+});
+
+test('Schnellcheck Miete minus Bank mit Zielen', () => {
+  // Werte wie im Screenshot: 523,25 € Miete
+  const p = { purchase_price: 100000, living_area: 40, cold_rent: 523.25, state: 'BY', hausgeld_non_allocable: 67 };
+  const m = analyze(p, { interest_rate: 4.2, repayment_rate: 2 });
+  const q = m.quick;
+  assert.ok(Math.abs(q.rent_month - q.interest_month - q.principal_month - q.rent_minus_bank_month) < 0.02);
+  assert.ok(Math.abs((q.rent_month - q.interest_month) / q.principal_month - q.repayment_cover) < 0.001);
+  assert.equal(q.target_rent_minus_bank, -100);
+  assert.equal(q.target_repayment_cover, 0.5);
+  // Beide Ziele erreicht bei hoher Miete, verfehlt bei niedriger
+  assert.equal(analyze({ ...p, cold_rent: 900 }).quick.verdict, 'green');
+  assert.equal(analyze({ ...p, cold_rent: 200 }).quick.verdict, 'red');
+  // Eigene Ziele
+  const strict = analyze({ ...p, cold_rent: 900 }, { target_rent_minus_bank: 500 });
+  assert.equal(strict.quick.meets_gap, false);
 });

@@ -408,3 +408,23 @@ test('Wohnung zum Ansehen freigeben', async () => {
   await req(`/wohnungen/${id}/freigaben/${viewerId}/entfernen`, { method: 'POST', cookie: owner, form: { _csrf: csrfOf(d2.text) } });
   assert.equal((await req(`/wohnungen/${id}`, { cookie: viewer })).status, 404);
 });
+
+test('Schnellcheck mit eigenen Zielen', async () => {
+  const cookie = await login('admin@example.com', 'geheim-geheim');
+  const konto = await req('/konto', { cookie });
+  assert.match(konto.text, /Meine Ziele für den Schnellcheck/);
+  await req('/konto/standardwerte', { method: 'POST', cookie, form: { _csrf: csrfOf(konto.text), a_target_rent_minus_bank: '-50', a_target_repayment_cover_pct: '60', a_interest_rate: '4,2' } });
+  const form = await req('/wohnungen/neu', { cookie });
+  assert.doesNotMatch(form.text, /name="a_target_rent_minus_bank"/); // Ziele nur im Konto
+  const created = await req('/wohnungen/neu', {
+    method: 'POST', cookie,
+    form: { _csrf: csrfOf(form.text), title: 'Schnellcheck-Test', state: 'BY', purchase_price: '150000', living_area: '40', cold_rent: '520', a_interest_rate: '4,2', a_repayment_rate: '2' },
+  });
+  const path = created.headers.get('location');
+  const detail = await req(path, { cookie });
+  assert.match(detail.text, /Schnellcheck: Miete minus Bank/);
+  assert.match(detail.text, /Miete minus Bank ab <span[^>]*>−50 €/);
+  assert.match(detail.text, /mindestens <span[^>]*>60 %/);
+  const list = await req('/wohnungen', { cookie });
+  assert.match(list.text, /Miete − Bank/);
+});

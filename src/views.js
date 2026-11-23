@@ -1,7 +1,7 @@
 // HTML-Seiten (serverseitig gerendert, mit automatischem Escaping).
 import { fmt } from './shared/calc.js';
 import {
-  PROPERTY_FIELDS, PROPERTY_FIELD_MAP, ASSUMPTION_FIELDS, CORE_ASSUMPTIONS, STATUSES, RECOMMENDATIONS, RISK_LEVELS,
+  PROPERTY_FIELDS, PROPERTY_FIELD_MAP, ASSUMPTION_FIELDS, CORE_ASSUMPTIONS, GOAL_ASSUMPTIONS, STATUSES, RECOMMENDATIONS, RISK_LEVELS,
   LOCATION_CATEGORIES, ASSUMPTION_FIELD_MAP, STATES, labelOf,
 } from './shared/fields.js';
 import { METRIC_GROUPS, HEADLINE_METRICS, get, formatValue } from './shared/display.js';
@@ -191,7 +191,7 @@ export function overview(ctx, { rows, shared = [], status, mcpUrl }) {
           <th scope="col" data-sort="text">Wohnung</th>
           <th scope="col" data-sort="text">Status</th>
           <th scope="col" class="num" data-sort="num">Kaufpreis</th>
-          <th scope="col" class="num" data-sort="num">€/m²</th>
+          <th scope="col" class="num" data-sort="num">Miete − Bank</th>
           <th scope="col" class="num" data-sort="num">Faktor</th>
           <th scope="col" class="num" data-sort="num">Netto&shy;rendite</th>
           <th scope="col" class="num" data-sort="num">Cashflow n.&nbsp;St.</th>
@@ -205,7 +205,7 @@ export function overview(ctx, { rows, shared = [], status, mcpUrl }) {
             <span class="row-sub">${[p.city, p.district].filter(Boolean).join(', ') || '–'}${p.living_area ? `, ${fmt.num(p.living_area)} m²` : ''}</span></td>
           <td data-value="${p.status}">${labelOf(STATUSES, p.status)}</td>
           <td class="num" data-value="${p.purchase_price ?? ''}">${fmt.euro(p.purchase_price)}</td>
-          <td class="num" data-value="${m.purchase.price_per_sqm ?? ''}">${fmt.euro(m.purchase.price_per_sqm)}</td>
+          ${quickCell(m)}
           <td class="num" data-value="${m.yields.factor ?? ''}">${levelDot(signalFor(m, 'factor'), fmt.factor(m.yields.factor))}</td>
           <td class="num" data-value="${m.yields.net_yield ?? ''}">${levelDot(signalFor(m, 'net_yield'), fmt.pct(m.yields.net_yield))}</td>
           <td class="num" data-value="${m.cashflow.after_tax_month ?? ''}">${m.income.annual_rent ? levelDot(signalFor(m, 'cashflow'), fmt.euroSigned(m.cashflow.after_tax_month)) : '–'}</td>
@@ -226,6 +226,7 @@ export function overview(ctx, { rows, shared = [], status, mcpUrl }) {
           <th scope="col" data-sort="text">Wohnung</th>
           <th scope="col" data-sort="text">Geteilt von</th>
           <th scope="col" class="num" data-sort="num">Kaufpreis</th>
+          <th scope="col" class="num" data-sort="num">Miete − Bank</th>
           <th scope="col" class="num" data-sort="num">Faktor</th>
           <th scope="col" class="num" data-sort="num">Netto&shy;rendite</th>
           <th scope="col" class="num" data-sort="num">Cashflow n.&nbsp;St.</th>
@@ -238,6 +239,7 @@ export function overview(ctx, { rows, shared = [], status, mcpUrl }) {
             <span class="row-sub">${[p.city, p.district].filter(Boolean).join(', ') || '–'}${p.living_area ? `, ${fmt.num(p.living_area)} m²` : ''}</span></td>
           <td data-value="${ownerName}">${ownerName}</td>
           <td class="num" data-value="${p.purchase_price ?? ''}">${fmt.euro(p.purchase_price)}</td>
+          ${quickCell(m)}
           <td class="num" data-value="${m.yields.factor ?? ''}">${levelDot(signalFor(m, 'factor'), fmt.factor(m.yields.factor))}</td>
           <td class="num" data-value="${m.yields.net_yield ?? ''}">${levelDot(signalFor(m, 'net_yield'), fmt.pct(m.yields.net_yield))}</td>
           <td class="num" data-value="${m.cashflow.after_tax_month ?? ''}">${m.income.annual_rent ? levelDot(signalFor(m, 'cashflow'), fmt.euroSigned(m.cashflow.after_tax_month)) : '–'}</td>
@@ -503,6 +505,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
   const overviewPanel = panel('ueberblick', html`
     <div class="detail-grid">
       <div class="detail-main">
+        ${quickCheck(m)}
         ${a ? html`<section class="verdict verdict-${rec?.level || 'none'}">
             <div class="verdict-main">
               <span class="verdict-label">Empfehlung</span>
@@ -513,6 +516,7 @@ export function detail(ctx, { property: p, analysis: a, metrics: m, notes, histo
             <div class="verdict-text">${a.summary ? paragraphs(a.summary) : html`<p class="muted">Kein Fazit hinterlegt.</p>`}
               <p class="small muted">Analyse vom ${dateTime(a.created_at)}</p></div>
           </section>` : ''}
+        <h2 class="section-title">Genaue Rechnung mit Hausgeld und Steuer</h2>
         ${m.warnings.length ? html`<ul class="warnings">${m.warnings.map((w) => html`<li>${w}</li>`)}</ul>` : ''}
         ${headline(m)}
         ${assumptionLine(p, m, readOnly)}
@@ -617,6 +621,19 @@ function explainSection(p, m) {
     <p class="lead">Hier siehst du, wie Quadratmeter die Kennzahlen dieser Wohnung ausrechnet – mit ihren echten Zahlen, für das erste Jahr. Wenn du im Überblick die Regler bewegst, ändern sich auch diese Werte.</p>
 
     <ol class="steps-explain">
+      <li id="rechnung-schnell">
+        <h2>Schnellcheck: Miete minus Bank</h2>
+        <p>Der erste Blick: Reicht die Kaltmiete für die Bankrate? Hausgeld und Steuer bleiben hier noch weg – die kommen in den nächsten Schritten.</p>
+        ${ledger(m, [
+          line('', 'Kaltmiete' + (m.income.parking_rent_month ? ' inkl. Stellplatz' : ''), 'quick.rent_month', 'euro2'),
+          line('−', 'Zinsen', 'quick.interest_month', 'euro2', 'Anteil der Rate im 1. Jahr'),
+          line('−', 'Tilgung', 'quick.principal_month', 'euro2', 'Anteil der Rate im 1. Jahr'),
+          line('=', 'Miete minus Bank', 'quick.rent_minus_bank_month', 'euroSigned2'),
+        ], { caption: 'Schnellcheck' })}
+        <p class="formula">Tilgung aus der Miete = (Kaltmiete − Zinsen) ÷ Tilgung = ${val(m, 'quick.repayment_cover', 'coverPct')}</p>
+        <p class="small muted">Deine Ziele: Miete minus Bank ab ${val(m, 'quick.target_rent_minus_bank', 'euroSigned')} im Monat, und die Miete bezahlt nach den Zinsen mindestens ${val(m, 'quick.target_repayment_cover', 'pct0')} der Tilgung. Die Ziele änderst du unter Konto.</p>
+      </li>
+
       <li id="rechnung-kauf">
         <h2>Was die Wohnung insgesamt kostet</h2>
         <p>Zum Kaufpreis kommen die Kaufnebenkosten. Die Grunderwerbsteuer hängt vom Bundesland ab, Notar, Grundbuch und Makler werden vom Kaufpreis berechnet.</p>
@@ -748,6 +765,8 @@ export function compare(ctx, { items }) {
     ['Kaufpreis pro m²', (x) => fmt.euro(x.m.purchase.price_per_sqm)],
     ['Gesamtinvestition', (x) => fmt.euro(x.m.purchase.total_investment)],
     ['Kaltmiete pro Monat', (x) => fmt.euro(x.m.income.cold_rent_month)],
+    ['Miete minus Bank pro Monat', (x) => (x.m.financing.loan && x.m.quick.rent_month ? goalDot(x.m.quick.gap_level, fmt.euroSigned(x.m.quick.rent_minus_bank_month)) : '–')],
+    ['Tilgung aus der Miete', (x) => (x.m.quick.repayment_cover !== null && x.m.quick.rent_month ? goalDot(x.m.quick.cover_level, formatValue('coverPct', x.m.quick.repayment_cover)) : '–')],
     ['Kaufpreisfaktor', (x) => levelDot(signalFor(x.m, 'factor'), fmt.factor(x.m.yields.factor))],
     ['Bruttomietrendite', (x) => fmt.pct(x.m.yields.gross_yield)],
     ['Nettomietrendite', (x) => levelDot(signalFor(x.m, 'net_yield'), fmt.pct(x.m.yields.net_yield))],
@@ -934,11 +953,15 @@ function assumptionPlaceholder(f) {
 }
 
 // values: { key: Rohwert als Text }
-function assumptionFields(values, prefix = 'a_') {
+function assumptionFields(values, { goals = false, prefix = 'a_' } = {}) {
   const core = ASSUMPTION_FIELDS.filter((f) => CORE_ASSUMPTIONS.includes(f.key));
-  const more = ASSUMPTION_FIELDS.filter((f) => !CORE_ASSUMPTIONS.includes(f.key) && f.key !== 'broker_pct');
+  const more = ASSUMPTION_FIELDS.filter((f) => !CORE_ASSUMPTIONS.includes(f.key) && !GOAL_ASSUMPTIONS.includes(f.key) && f.key !== 'broker_pct');
   const render = (f) => inputFor(f, values[f.key] ?? '', { name: prefix + f.key, placeholder: assumptionPlaceholder(f) });
-  return html`<div class="field-grid">${core.map(render)}</div>
+  return html`${goals ? html`<h3 id="ziele">Meine Ziele für den Schnellcheck</h3>
+    <p class="small muted">Gelten für alle deine Wohnungen.</p>
+    <div class="field-grid">${ASSUMPTION_FIELDS.filter((f) => GOAL_ASSUMPTIONS.includes(f.key)).map(render)}</div>
+    <h3>Finanzierung und Steuer</h3>` : ''}
+    <div class="field-grid">${core.map(render)}</div>
     <details class="more">
       <summary>Weitere Annahmen</summary>
       <p class="small muted">Leere Felder nutzen den grau angezeigten Standardwert.</p>
@@ -947,6 +970,8 @@ function assumptionFields(values, prefix = 'a_') {
 }
 
 const PREVIEW_ROWS = [
+  { key: 'quick.rent_minus_bank_month', label: 'Miete minus Bank pro Monat', format: 'euroSigned', strong: true, goal: 'quick.gap_level' },
+  { key: 'quick.repayment_cover', label: 'Tilgung aus der Miete', format: 'coverPct', goal: 'quick.cover_level' },
   { key: 'purchase.total_investment', label: 'Gesamtinvestition', format: 'euro', strong: true },
   { key: 'purchase.ancillary_total', label: 'davon Kaufnebenkosten', format: 'euro' },
   { key: 'purchase.price_per_sqm', label: 'Kaufpreis pro m²', format: 'euro' },
@@ -970,7 +995,8 @@ function preview(m) {
       ${PREVIEW_ROWS.map((r) => html`<div class="${r.strong ? 'strong' : ''}">
         <dt>${r.label}</dt>
         <dd><span data-metric="${r.key}" data-format="${r.format}">${formatValue(r.format, get(m, r.key))}</span>
-          ${r.signal ? html`<span class="pv-signal" data-signal="${r.signal}">${levelDot(signalFor(m, r.signal))}</span>` : ''}</dd>
+          ${r.signal ? html`<span class="pv-signal" data-signal="${r.signal}">${levelDot(signalFor(m, r.signal))}</span>` : ''}
+          ${r.goal ? html`<span class="pv-signal" data-goal="${r.goal}">${m.quick.rent_month && m.financing.loan ? goalDot(get(m, r.goal), undefined, r.goal) : ''}</span>` : ''}</dd>
       </div>`)}
     </dl>
     <ul class="pv-warnings small" data-preview-warnings>${m.warnings.map((w) => html`<li>${w}</li>`)}</ul>
@@ -992,8 +1018,8 @@ export function propertyForm(ctx, { mode, id, values, assumptionValues, status, 
     <form method="post" action="${isNew ? '/wohnungen/neu' : `/wohnungen/${id}/bearbeiten`}" class="property-form" data-property-form novalidate>
       ${csrf(ctx)}
       <div class="pv-bar" aria-hidden="true">
-        <span>Faktor <b data-metric="yields.factor" data-format="factor">${formatValue('factor', metrics.yields.factor)}</b></span>
-        <span>Netto <b data-metric="yields.net_yield" data-format="pct">${formatValue('pct', metrics.yields.net_yield)}</b></span>
+        <span>Miete − Bank <b data-metric="quick.rent_minus_bank_month" data-format="euroSigned">${formatValue('euroSigned', metrics.quick.rent_minus_bank_month)}</b></span>
+        <span>Tilgung <b data-metric="quick.repayment_cover" data-format="coverPct">${formatValue('coverPct', metrics.quick.repayment_cover)}</b></span>
         <span>Cashflow <b data-metric="cashflow.after_tax_month" data-format="euroSigned">${formatValue('euroSigned', metrics.cashflow.after_tax_month)}</b></span>
       </div>
       <div class="form-layout">
@@ -1028,9 +1054,58 @@ export function defaultsSection(ctx, values) {
     <p class="small muted">Neue Wohnungen übernehmen diese Werte. Bei jeder Wohnung kannst du sie danach einzeln ändern.</p>
     <form method="post" action="/konto/standardwerte" class="stack">
       ${csrf(ctx)}
-      ${assumptionFields(values)}
+      ${assumptionFields(values, { goals: true })}
       <div><button type="submit">Standardwerte speichern</button></div>
     </form>
+  </section>`;
+}
+
+// ---------- Schnellcheck ----------
+
+const GOAL_LABELS = {
+  'quick.gap_level': { green: 'Ziel erreicht', yellow: 'knapp verfehlt', red: 'verfehlt' },
+  'quick.cover_level': { green: 'Ziel erreicht', yellow: 'nicht erreicht', red: 'Zinsen nicht gedeckt' },
+};
+function goalDot(level, label, key = 'quick.gap_level') {
+  if (!level) return '';
+  return html`<span class="signal signal-${level}"><span class="dot" aria-hidden="true"></span>${label ?? GOAL_LABELS[key][level]}</span>`;
+}
+
+function quickCell(m) {
+  const ok = m.quick.rent_month && m.financing.loan;
+  return html`<td class="num" data-value="${ok ? m.quick.rent_minus_bank_month : ''}">${ok
+    ? html`<span class="quick-cell signal signal-${m.quick.verdict}" title="Tilgung aus der Miete: ${formatValue('coverPct', m.quick.repayment_cover)}"><span class="dot" aria-hidden="true"></span>${fmt.euroSigned(m.quick.rent_minus_bank_month)}</span>`
+    : '–'}</td>`;
+}
+
+function quickCheck(m) {
+  const q = m.quick;
+  if (!q.rent_month || !m.financing.loan) {
+    return html`<section class="quick quick-empty"><h2>Schnellcheck: Miete minus Bank</h2>
+      <p class="small muted">${!q.rent_month ? 'Trag Kaltmiete und Kaufpreis ein, dann siehst du hier, ob die Miete die Bankrate trägt.' : 'Ohne Darlehen gibt es keine Bankrate – die ganze Kaltmiete bleibt dir.'}</p></section>`;
+  }
+  const verdict = { green: 'Beide Ziele erreicht', yellow: 'Ein Ziel verfehlt', red: 'Beide Ziele verfehlt' };
+  return html`<section class="quick quick-${q.verdict}" aria-labelledby="quick-title" data-quick>
+    <div class="quick-head">
+      <h2 id="quick-title">Schnellcheck: Miete minus Bank</h2>
+      <span class="quick-verdict" data-quick-verdict>${verdict[q.verdict]}</span>
+    </div>
+    <div class="quick-calc" role="group" aria-label="Kaltmiete minus Zinsen minus Tilgung pro Monat">
+      <div><span>Kaltmiete</span><b data-metric="quick.rent_month" data-format="euro">${fmt.euro(q.rent_month)}</b></div>
+      <span class="op" aria-hidden="true">−</span>
+      <div><span>Zinsen</span><b data-metric="quick.interest_month" data-format="euro">${fmt.euro(q.interest_month)}</b></div>
+      <span class="op" aria-hidden="true">−</span>
+      <div><span>Tilgung</span><b data-metric="quick.principal_month" data-format="euro">${fmt.euro(q.principal_month)}</b></div>
+      <span class="op" aria-hidden="true">=</span>
+      <div class="quick-result"><span>Miete minus Bank</span><b data-metric="quick.rent_minus_bank_month" data-format="euroSigned">${fmt.euroSigned(q.rent_minus_bank_month)}</b></div>
+    </div>
+    <ul class="goals">
+      <li><span data-goal="quick.gap_level">${goalDot(q.gap_level)}</span>
+        <span>Miete minus Bank ab <span data-metric="quick.target_rent_minus_bank" data-format="euroSigned">${fmt.euroSigned(q.target_rent_minus_bank)}</span> im Monat</span></li>
+      <li><span data-goal="quick.cover_level">${goalDot(q.cover_level, undefined, 'quick.cover_level')}</span>
+        <span>Miete bezahlt <b data-metric="quick.repayment_cover" data-format="coverPct">${formatValue('coverPct', q.repayment_cover)}</b> der Tilgung, Ziel mindestens <span data-metric="quick.target_repayment_cover" data-format="pct0">${formatValue('pct0', q.target_repayment_cover)}</span></span></li>
+    </ul>
+    <p class="small muted quick-foot">Pro Monat im 1. Jahr, ohne Hausgeld und Steuer. <a href="?tab=rechnung#rechnung-schnell" data-goto="rechnung-schnell">Wie gerechnet?</a> Deine Ziele änderst du unter <a href="/konto#ziele">Konto</a>.</p>
   </section>`;
 }
 

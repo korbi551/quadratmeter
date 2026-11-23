@@ -96,4 +96,6 @@ export const METRIC_GROUPS = [
 ];
 
 FORMATS.euro2 = (v) => fmt.euro(v, 2);
+FORMATS.coverPct = (v) => (typeof v === 'number' ? `${fmt.num(Math.max(0, v) * 100, 0)} %` : 'keine Tilgung');
+FORMATS.pct0 = (v) => (typeof v === 'number' ? `${fmt.num(v * 100, 0)} %` : '–');
 FORMATS.euroSigned2 = (v) => (typeof v === 'number' ? `${v > 0 ? '+' : ''}${fmt.euro(v, 2)}` : '–');

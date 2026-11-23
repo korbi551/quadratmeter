@@ -2,7 +2,7 @@
 import { nowIso } from './db.js';
 import { analyze } from './shared/calc.js';
 import {
-  PROPERTY_FIELDS, ASSUMPTION_FIELDS, STATES, STATUSES, RECOMMENDATIONS, LOCATION_CATEGORIES, parseNumber,
+  PROPERTY_FIELDS, ASSUMPTION_FIELDS, STATES, STATUSES, RECOMMENDATIONS, LOCATION_CATEGORIES, parseNumber, GOAL_ASSUMPTIONS,
 } from './shared/fields.js';
 
 export class ValidationError extends Error {}
@@ -194,8 +194,10 @@ function hydrateProperty(row) {
 
 // Welche Annahmen gelten? Eigene Annahmen der Wohnung > letzte Analyse (über den Standardwerten) > Standardwerte.
 export function effectiveAssumptions(property, analysis, defaults = {}) {
-  if (property?.assumptions && typeof property.assumptions === 'object') return { ...property.assumptions };
-  return { ...defaults, ...(analysis?.assumptions || {}) };
+  const goals = Object.fromEntries(GOAL_ASSUMPTIONS.filter((k) => k in defaults).map((k) => [k, defaults[k]]));
+  const strip = (o) => Object.fromEntries(Object.entries(o || {}).filter(([k]) => !GOAL_ASSUMPTIONS.includes(k)));
+  if (property?.assumptions && typeof property.assumptions === 'object') return { ...strip(property.assumptions), ...goals };
+  return { ...strip(defaults), ...strip(analysis?.assumptions), ...goals };
 }
 
 export function createStore(db) {
